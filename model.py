@@ -36,13 +36,13 @@ class KwisatzHaderach(nn.Module):
             return torch.clamp((1 - r_sqr)**3, 0, 1)
 
         def Conv(name, activation=None, **kwargs):
-            conv_fn = ml3d.layers.ContinuousConv
 
             window_fn = None
             if self.use_window == True:
                 window_fn = window_poly6
 
-            conv = conv_fn(kernel_size=self.kernel_size,
+            conv = ml3d.layers.ContinuousConv(
+                           kernel_size=self.kernel_size,
                            activation=activation,
                            align_corners=True,
                            interpolation=self.interpolation,
@@ -50,7 +50,8 @@ class KwisatzHaderach(nn.Module):
                            normalize=False,
                            window_function=window_fn,
                            radius_search_ignore_query_points=True,
-                           **kwargs)
+                           **kwargs
+                           )
 
             self._all_convs.append((name, conv))
             return conv
