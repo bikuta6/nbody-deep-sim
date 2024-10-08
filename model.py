@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import open3d.ml.torch as ml3d
 import numpy as np
+import tqdm
 
 class KwisatzHaderach(nn.Module):
     def __init__(
@@ -133,14 +134,21 @@ class KwisatzHaderach(nn.Module):
         return new_pos, new_vel
 
 
-'''
+import time
+
 dummy_pos = torch.rand(1000, 3)
 dummy_vel = torch.rand(1000, 3)
 dummy_mass = torch.rand(1000, 1)
 print(dummy_pos.shape, dummy_vel.shape, dummy_mass.shape, dummy_mass.dim())
 
 model = KwisatzHaderach()
+start = time.time()
 new_pos, new_vel = model(dummy_pos, dummy_vel, dummy_mass)
+for i in tqdm.tqdm(range(1000)):
+    new_pos, new_vel = model(new_pos, new_vel, dummy_mass)
+
+end = time.time()
+
+print("Time taken for 1000 iterations: ", end - start)
 
 print(new_pos.shape, new_vel.shape)
-'''
