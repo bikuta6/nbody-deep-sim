@@ -68,7 +68,7 @@ class NBodySimulation:
         
         return KE, PE
 
-    def run(self, t_end, plot_real_time=True, save_states=False):
+    def run(self, t_end, save_states=False):
         num_steps = int(np.ceil(t_end / self.dt))
         
         pos_save = np.zeros((len(self.particles), 3, num_steps + 1))
@@ -88,10 +88,6 @@ class NBodySimulation:
         KE_save[0] = KE
         PE_save[0] = PE
 
-
-        
-        if plot_real_time:
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(4, 5), dpi=80)
         
         for i in tqdm.tqdm(range(num_steps)):
             for p in self.particles:
@@ -113,38 +109,12 @@ class NBodySimulation:
                 pos_save[j, :, i + 1] = p.position
                 vel_save[j, :, i + 1] = p.velocity
                 accel_save[j, :, i + 1] = p.acceleration
-            
-            if plot_real_time:
-            #or (i == num_steps - 1):
-                ax1.cla()
-                for j, p in enumerate(self.particles):
-                    ax1.scatter(pos_save[j, 0, max(i - 50, 0):i + 1], pos_save[j, 1, max(i - 50, 0):i + 1], s=1, color=[0.7, 0.7, 1])
-                ax1.scatter([p.position[0] for p in self.particles], [p.position[1] for p in self.particles], s=10, color='blue')
-                ax1.set_xlim(-2, 2)
-                ax1.set_ylim(-2, 2)
-                ax1.set_aspect('equal', 'box')
-                ax1.set_xticks([-2, -1, 0, 1, 2])
-                ax1.set_yticks([-2, -1, 0, 1, 2])
-                
-                ax2.cla()
-                ax2.scatter(t_all, KE_save, color='red', s=1, label='KE' if i == num_steps - 1 else "")
-                ax2.scatter(t_all, PE_save, color='blue', s=1, label='PE' if i == num_steps - 1 else "")
-                ax2.scatter(t_all, KE_save + PE_save, color='black', s=1, label='Etot' if i == num_steps - 1 else "")
-                ax2.set_xlim(0, t_end)
-                ax2.set_ylim(-300, 300)
-                ax2.set_aspect(0.007)
-                
-                plt.pause(0.0001)
-        if plot_real_time:
-            ax2.set_xlabel('time')
-            ax2.set_ylabel('energy')
-            ax2.legend(loc='upper right')
-            
-            plt.savefig('nbody.png', dpi=240)
-            plt.show()
 
+        types = [p.type for p in self.particles]
+            
         if save_states:
-            return pos_save, vel_save, accel_save, KE_save, PE_save, t_all, np.array([p.mass for p in self.particles])
+            return pos_save, vel_save, accel_save, KE_save, PE_save, t_all, np.array([p.mass for p in self.particles]), types
+
         
 
 def generate_disk_galaxy(N, M, m, R, G, displacement, clockwise=True):
@@ -716,62 +686,4 @@ def generateDiskWithDarkMatter(nbStars, radius, Mass, bh_Mass_percentage, zOffse
 
     return [Particle(mass, pos, vel, type=t) for mass, pos, vel, t in zip(total_masses, total_positions, np.vstack((velocities, np.zeros((nbDarkMatter, 3)))), total_types)]
 
-def animate3d(pos_save, mass_save=None):
 
-    fig = plt.figure(figsize=(6, 6))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlim(-2, 2)
-    ax.set_ylim(-2, 2)
-    ax.set_zlim(-2, 2)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
-
-    ax.set_facecolor('black')
-
-    # convert mass_save to same shape as pos_save, pos_save.shape = (N, 3, num_steps), mass_save.shape = (N,), mass_save.shape = (N, num_steps)
-
-    new_mass_save = np.zeros((pos_save.shape[0], pos_save.shape[2]))
-    for i in range(pos_save.shape[0]):
-        new_mass_save[i, :] = mass_save[i]
-
-
-    if mass_save is None:
-        
-        scat = ax.scatter([], [], [], s=5, c='white')
-    else:
-        
-        scat = ax.scatter([], [], [], c='white', s=5 * new_mass_save)
-
-    def update(i):
-        scat._offsets3d = (pos_save[:, 0, i], pos_save[:, 1, i], pos_save[:, 2, i])
-
-    ani = animation.FuncAnimation(fig, update, frames=pos_save.shape[2], interval=10)
-    plt.close(fig)
-    return HTML(ani.to_html5_video())
-
-
-def main():
-    N = 200
-    t_end = 20.0
-    dt = 0.01
-    softening = 0.1
-    G = 1.0
-    
-    masses = 20.0 * np.ones(N) / N
-    positions = np.random.randn(N, 3)
-    velocities = np.random.randn(N, 3)
-    velocities -= np.mean(masses[:, None] * velocities, axis=0) / np.mean(masses)
-    
-    particles1 = generate_disk_galaxy(N=N//2, M=2.0, m=1.0/N, R=1.0, G=G, displacement=[1, 2, 0], clockwise=False)
-    particles2 = generate_disk_galaxy(N=N//2, M=1.0, m=1.0/N, R=1.0, G=G, displacement=[-1, -1, 0], clockwise=True)
-    particles = particles1 + particles2
-    sim = NBodySimulation(particles, G, softening, dt)
-    pos, _, _, _, _, _, mass_save = sim.run(t_end, plot_real_time=False, save_states=True)
-
-    animate3d(pos, mass_save)
-
-if __name__ == "__main__":
-    main()
-    
-    
