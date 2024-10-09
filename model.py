@@ -133,7 +133,7 @@ class KwisatzHaderach(nn.Module):
 
         return new_pos, new_vel
 
-
+'''
 import time
 
 dummy_pos = torch.rand(1000, 3)
@@ -152,3 +152,4 @@ end = time.time()
 print("Time taken for 1000 iterations: ", end - start)
 
 print(new_pos.shape, new_vel.shape)
+'''
