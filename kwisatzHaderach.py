@@ -159,14 +159,13 @@ class KwisatzHaderach(nn.Module):
         
 
 
-    def get_displacements(self, pos, vel, mass=None):
+    def forward(self, pos, vel, mass=None):
         if mass is not None:
             if mass.dim() == 1:
                 mass = mass.unsqueeze(1)
             else:
                 assert mass.dim() == 2
-    
-        # compute the extent of the filters (the diameter)
+
 
         feats = [vel]
         if not mass is None:
@@ -197,18 +196,9 @@ class KwisatzHaderach(nn.Module):
         self.last_features = self.ans_convs[-2]
 
         # scale to better match the scale of the output distribution
-        self.pos_displacement = self.ans_convs[-1]
-        return self.pos_displacement
+        self.accelerations = self.ans_convs[-1]
+        return self.accelerations
 
-    def forward(self, pos, vel, mass=None):
-        displacement = self.get_displacements(pos, vel, mass)
-
-        #displacement is acceleration
-        new_vel = vel + displacement * self.time_step
-        new_pos = pos + new_vel * self.time_step
-
-        return new_pos, new_vel
-    
 
 
 

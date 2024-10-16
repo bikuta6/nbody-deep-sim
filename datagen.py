@@ -181,6 +181,7 @@ def generate_dataset_memory(n_scenes=5, window_size=5, shuffle=True):
             for k in range(1, window_size):
                 sample['pos_next{}'.format(k)] = frames[j+k]['pos']
                 sample['vel_next{}'.format(k)] = frames[j+k]['vel']
+                sample['acc_next{}'.format(k)] = frames[j+k]['acc']
             dataset.append(sample)
     if shuffle:
         np.random.shuffle(dataset)
@@ -208,6 +209,7 @@ def generate_dataset_memory_bh(n_scenes=5, window_size=6, shuffle=True):
             for k in range(1, window_size):
                 sample['pos_next{}'.format(k)] = frames[j+k]['pos']
                 sample['vel_next{}'.format(k)] = frames[j+k]['vel']
+                sample['acc_next{}'.format(k)] = frames[j+k]['acc']
             dataset.append(sample)
     if shuffle:
         np.random.shuffle(dataset)
