@@ -3,12 +3,13 @@ import numpy as np
 import json
 import glob
 import os
+import tqdm
 
 def gen_params():
     return {
-        'nbStars': int(np.random.randint(100, 500)),
-        'radius': float(np.random.uniform(1.0, 2.0)),
-        'Mass': float(np.random.uniform(1.0, 3.0)),
+        'nbStars':250,
+        'radius': 1,
+        'Mass': 1,
         'zOffsetMax': float(np.random.uniform(0, 0.5)),
         'gravityCst': 1.0,
         'distribution': 'hernquist',
@@ -21,8 +22,6 @@ def gen_params():
 def generate_scene_2gals():
     params1 = gen_params()
     params2 = gen_params()
-    print(params1)
-    print(params2)
 
     particles1 = generateDisk3Dv3(**params1)
     particles2 = generateDisk3Dv3(**params2)
@@ -71,6 +70,57 @@ def generate_scene_2gals():
 
     return json.dumps(final_json, indent=4)
 
+def generate_scene_2gals_memory():
+    params1 = gen_params()
+    params2 = gen_params()
+
+    particles1 = generateDisk3Dv3(**params1)
+    particles2 = generateDisk3Dv3(**params2)
+
+    t_end = 10.0
+    dt = 0.01
+    softening = 0.1
+    G = 1.0
+
+    particles = particles1 + particles2
+    sim = NBodySimulation(particles, G, softening, dt)
+
+    pos, vel, acc, KE, PE, _, masses, types = sim.run(t_end=t_end, save_states=True)
+    
+    # Convert all arrays to lists
+    pos = np.array(pos).transpose(2, 0, 1)
+    vel = np.array(vel).transpose(2, 0, 1)
+    acc = np.array(acc).transpose(2, 0, 1)
+    KE = KE.flatten().astype(float).tolist()  # Ensure floats
+    PE = PE.flatten().astype(float).tolist()  # Ensure floats
+    masses = masses.flatten().astype(float).tolist()  # Ensure floats
+
+
+    frames = []
+    for i in range(len(pos)):
+        frames.append({
+            'frame': int(i),  # Ensure the frame index is an int
+            'pos': pos[i].tolist(),
+            'vel': vel[i].tolist(),
+            'acc': acc[i].tolist()
+        })
+
+    final_json = {
+        'galaxy1_params': params1,
+        'galaxy2_params': params2,
+        'dt': float(dt),
+        'softening': float(softening),
+        'G': float(G),
+        't_end': float(t_end),
+        'masses': [float(m) for m in masses],
+        'types': types,
+        'KE': KE,
+        'PE': PE,
+        'frames': frames
+    }
+
+    return final_json
+
 
 def generate_dataset(n_scenes=5, window_size=3, shuffle=True, dir='./train/', save=True):
     # Ensure the directory exists
@@ -87,16 +137,18 @@ def generate_dataset(n_scenes=5, window_size=3, shuffle=True, dir='./train/', sa
     name = dir + f'{dir[1:-1]}_{new_id}.json'
     
     dataset = []
-    for i in range(n_scenes):
+    print(f'Generating dataset with {n_scenes} scenes...')
+    for i in tqdm.tqdm(range(n_scenes)):
         scene = generate_scene_2gals()
         scene = json.loads(scene)
         frames = scene['frames']
         masses = scene['masses']
-        for j in range(len(frames)-window_size):
+        for j in range(5, len(frames)-window_size):
             sample = {
                 'masses': masses,
                 'pos': frames[j]['pos'],
                 'vel': frames[j]['vel'],
+                'acc': frames[j]['acc']
             }
             for k in range(1, window_size):
                 sample['pos_next{}'.format(k)] = frames[j+k]['pos']
@@ -107,5 +159,57 @@ def generate_dataset(n_scenes=5, window_size=3, shuffle=True, dir='./train/', sa
     if save:
         with open(name, 'w') as f:
             json.dump(dataset, f)
+
+    return dataset
+
+def generate_dataset_memory(n_scenes=5, window_size=5, shuffle=True):
+    # Ensure the directory exists
+    
+    dataset = []
+    print(f'Generating dataset with {n_scenes} scenes...')
+    for _ in tqdm.tqdm(range(n_scenes)):
+        scene = generate_scene_2gals_memory()
+        frames = scene['frames']
+        masses = scene['masses']
+        for j in range(5, len(frames)-window_size):
+            sample = {
+                'masses': masses,
+                'pos': frames[j]['pos'],
+                'vel': frames[j]['vel'],
+                'acc': frames[j]['acc']
+            }
+            for k in range(1, window_size):
+                sample['pos_next{}'.format(k)] = frames[j+k]['pos']
+                sample['vel_next{}'.format(k)] = frames[j+k]['vel']
+            dataset.append(sample)
+    if shuffle:
+        np.random.shuffle(dataset)
+
+    return dataset
+
+def generate_dataset_memory_bh(n_scenes=5, window_size=6, shuffle=True):
+    # Ensure the directory exists
+    
+    dataset = []
+    print(f'Generating dataset with {n_scenes} scenes...')
+    for _ in tqdm.tqdm(range(n_scenes)):
+        scene = generate_scene_2gals_memory()
+        types= np.array(scene['types'])
+        bh_index = np.where(types == "black hole")[0]
+        frames = scene['frames']
+        masses = scene['masses']
+        for j in range(5, len(frames)-window_size):
+            sample = {
+                'masses': masses,
+                'bh_index': bh_index,
+                'pos': frames[j]['pos'],
+                'vel': frames[j]['vel'],
+            }
+            for k in range(1, window_size):
+                sample['pos_next{}'.format(k)] = frames[j+k]['pos']
+                sample['vel_next{}'.format(k)] = frames[j+k]['vel']
+            dataset.append(sample)
+    if shuffle:
+        np.random.shuffle(dataset)
 
     return dataset

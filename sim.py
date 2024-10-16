@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import tqdm
 # use matplotlib animation
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
@@ -16,12 +15,13 @@ class Particle:
         self.type = type
 
 class NBodySimulation:
-    def __init__(self, particles, G=1.0, softening=0.1, dt=0.01):
+    def __init__(self, particles, G=1.0, softening=0.1, dt=0.01, calc_energy=False):
         self.particles = particles
         self.G = G
         self.softening = softening
         self.dt = dt
         self.t = 0
+        self.calc_energy = calc_energy
     
     def get_accelerations(self):
         positions = np.array([p.position for p in self.particles])
@@ -84,12 +84,13 @@ class NBodySimulation:
             accel_save[i, :, 0] = p.acceleration
         
         self.get_accelerations()
-        KE, PE = self.get_energy()
-        KE_save[0] = KE
-        PE_save[0] = PE
+        if self.calc_energy:
+            KE, PE = self.get_energy()
+            KE_save[0] = KE
+            PE_save[0] = PE
 
         
-        for i in tqdm.tqdm(range(num_steps)):
+        for i in range(num_steps):
             for p in self.particles:
                 p.velocity += p.acceleration * self.dt / 2.0
                 p.position += p.velocity * self.dt
@@ -101,9 +102,10 @@ class NBodySimulation:
 
             self.t += self.dt
             
-            KE, PE = self.get_energy()
-            KE_save[i + 1] = KE
-            PE_save[i + 1] = PE
+            if self.calc_energy:
+                KE, PE = self.get_energy()
+                KE_save[i + 1] = KE
+                PE_save[i + 1] = PE
             
             for j, p in enumerate(self.particles):
                 pos_save[j, :, i + 1] = p.position
@@ -350,7 +352,7 @@ def generateDisk3Dv3(nbStars, radius, Mass, zOffsetMax, gravityCst, distribution
     positions = np.zeros(shape=(nbStars + 1, 3))
     distances = np.sqrt(np.random.random((nbStars+1,)))
     # if any of the distances is 0, we set it to the machine epsilon
-    distances[distances == 0] = np.finfo(np.float32).eps
+    distances[distances == 0] = 0.01 * radius
     types = [None] * (nbStars + 1)  
     distances[0] = 0
     zOffsets = (np.random.random((nbStars+1,)) - 0.5) * 2 * zOffsetMax * (np.ones_like(distances) - np.sqrt(distances))
