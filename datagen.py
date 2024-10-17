@@ -162,7 +162,7 @@ def generate_dataset(n_scenes=5, window_size=3, shuffle=True, dir='./train/', sa
 
     return dataset
 
-def generate_dataset_memory(n_scenes=5, window_size=5, shuffle=True):
+def generate_dataset_memory(n_scenes=5, shuffle=True):
     # Ensure the directory exists
     
     dataset = []
@@ -171,22 +171,44 @@ def generate_dataset_memory(n_scenes=5, window_size=5, shuffle=True):
         scene = generate_scene_2gals_memory()
         frames = scene['frames']
         masses = scene['masses']
-        for j in range(5, len(frames)-window_size):
+        for j in range(len(frames)-1):
             sample = {
                 'masses': masses,
                 'pos': frames[j]['pos'],
                 'vel': frames[j]['vel'],
                 'acc': frames[j]['acc']
             }
-            for k in range(1, window_size):
-                sample['pos_next{}'.format(k)] = frames[j+k]['pos']
-                sample['vel_next{}'.format(k)] = frames[j+k]['vel']
-                sample['acc_next{}'.format(k)] = frames[j+k]['acc']
             dataset.append(sample)
     if shuffle:
         np.random.shuffle(dataset)
 
     return dataset
+
+def generate_dataset_memory_black_hole_info(n_scenes=5, shuffle=True):
+    # Ensure the directory exists
+    
+    dataset = []
+    print(f'Generating dataset with {n_scenes} scenes...')
+    for _ in tqdm.tqdm(range(n_scenes)):
+        scene = generate_scene_2gals_memory()
+        types= np.array(scene['types'])
+        bh_index = np.where(types == "black hole")[0]
+        frames = scene['frames']
+        masses = scene['masses']
+        for j in range(len(frames)-1):
+            sample = {
+                'masses': masses,
+                'bh_index': bh_index,
+                'pos': frames[j]['pos'],
+                'vel': frames[j]['vel'],
+                'acc': frames[j]['acc']
+            }
+            dataset.append(sample)
+    if shuffle:
+        np.random.shuffle(dataset)
+
+    return dataset
+
 
 def generate_dataset_memory_bh(n_scenes=5, window_size=6, shuffle=True):
     # Ensure the directory exists
@@ -205,6 +227,7 @@ def generate_dataset_memory_bh(n_scenes=5, window_size=6, shuffle=True):
                 'bh_index': bh_index,
                 'pos': frames[j]['pos'],
                 'vel': frames[j]['vel'],
+                'acc': frames[j]['acc']
             }
             for k in range(1, window_size):
                 sample['pos_next{}'.format(k)] = frames[j+k]['pos']

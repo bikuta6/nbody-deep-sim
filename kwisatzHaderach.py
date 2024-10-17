@@ -84,12 +84,13 @@ class KwisatzHaderach(nn.Module):
         coordinate_mapping='ball_to_cube_volume_preserving',
         interpolation='linear',
         use_window=True,
-        particle_radius=1,
+        particle_radius=2,
         time_step=0.01,
         other_feats_channels=1, # mass
         layer_channels=[32, 64, 64, 3],
         dropout=None,
-        activation=None
+        activation=None,
+        calc_neighbors=True,
     ):
 
         super(KwisatzHaderach, self).__init__()
@@ -105,6 +106,7 @@ class KwisatzHaderach(nn.Module):
         self.filter_extent = torch.tensor([self.radius_scale * 6 * self.particle_radius], dtype=torch.float32).item()
         self.dropout = dropout
         self.activation = activation
+        self.calc_neighbors = calc_neighbors
 
 
         def window_poly6(r_sqr):
@@ -122,7 +124,7 @@ class KwisatzHaderach(nn.Module):
                                                 filter_extent=self.filter_extent,
                                                 activation=self.activation,
                                                 dropout=self.dropout,
-                                                calc_neighbors=True)
+                                                calc_neighbors=self.calc_neighbors)
         
         
         self.blocks = []
