@@ -80,11 +80,11 @@ class KwisatzHaderach(nn.Module):
     def __init__(
         self,
         kernel_size=[4, 4, 4],
-        radius_scale=1.5,
+        radius_scale=1,
         coordinate_mapping='ball_to_cube_volume_preserving',
         interpolation='linear',
         use_window=True,
-        particle_radius=2,
+        particle_radius=1,
         time_step=0.01,
         other_feats_channels=1, # mass
         layer_channels=[32, 64, 64, 3],
@@ -103,7 +103,7 @@ class KwisatzHaderach(nn.Module):
         self.time_step = time_step
         self.other_feats_channels = other_feats_channels
         self.layer_channels = layer_channels
-        self.filter_extent = torch.tensor([self.radius_scale * 6 * self.particle_radius], dtype=torch.float32).item()
+        self.filter_extent = torch.tensor([self.radius_scale * 3 * self.particle_radius], dtype=torch.float32).item()
         self.dropout = dropout
         self.activation = activation
         self.calc_neighbors = calc_neighbors
