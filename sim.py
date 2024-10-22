@@ -15,7 +15,7 @@ class Particle:
         self.type = type
 
 class NBodySimulation:
-    def __init__(self, particles, G=1.0, softening=0.1, dt=0.01, calc_energy=False):
+    def __init__(self, particles, G=1.0, softening=0.0, dt=0.01, calc_energy=False):
         self.particles = particles
         self.G = G
         self.softening = softening
@@ -34,8 +34,10 @@ class NBodySimulation:
         dx = x.T - x
         dy = y.T - y
         dz = z.T - z
-        
-        inv_r3 = (dx**2 + dy**2 + dz**2 + self.softening**2)
+        if self.softening > 0:
+            inv_r3 = (dx**2 + dy**2 + dz**2 + self.softening**2)
+        else:
+            inv_r3 = (dx**2 + dy**2 + dz**2)
         inv_r3[inv_r3 > 0] = inv_r3[inv_r3 > 0]**(-1.5)
         
         ax = self.G * (dx * inv_r3) @ masses

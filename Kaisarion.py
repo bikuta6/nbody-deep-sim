@@ -19,7 +19,6 @@ class ContinuousConvolutionBlock(nn.Module):
                  filter_extent=0.1,
                  activation=None,
                  dropout=None,
-                 dense=True,
                  calc_neighbors=False,
                  **kwargs):
         super(ContinuousConvolutionBlock, self).__init__()
@@ -37,8 +36,7 @@ class ContinuousConvolutionBlock(nn.Module):
                             )
         self.calc_neighbors = calc_neighbors
         self.extent = filter_extent
-        if dense:
-            self.dense = nn.Linear(in_channels, out_channels)
+        self.dense = nn.Linear(in_channels, out_channels)
         self.num_neighbors = None
 
         if dropout is not None:
@@ -56,36 +54,28 @@ class ContinuousConvolutionBlock(nn.Module):
                             dtype=torch.float32),
             self.conv.nns.neighbors_row_splits)
 
-
-    def forward(self, feats, pos, diff_final_positions=None):
-        if diff_final_positions is not None:
-            ans_conv = self.conv(feats, pos, diff_final_positions, self.extent)
-        else:
-            ans_conv = self.conv(feats, pos, pos, self.extent)
+    def forward(self, feats, pos):
+        ans_conv = self.conv(feats, pos, pos, self.extent)
         if self.calc_neighbors:
             self.num_neighbors = self.get_num_neighbors()
-        if hasattr(self, 'dense'):
-            ans_dense = self.dense(feats)
+        ans_dense = self.dense(feats)
         if hasattr(self, 'activation'):
             ans_conv = self.activation(ans_conv)
+            ans_dense = self.activation(ans_dense)
         if hasattr(self, 'dropout'):
             ans_conv = self.dropout(ans_conv)
             ans_dense = self.dropout(ans_dense)
-        if hasattr(self, 'dense'):
-            if hasattr(self, 'activation'):
-                ans_dense = self.activation(ans_dense)
-            return ans_conv, ans_dense
-        else:
-            return ans_conv, None
+
+        return ans_conv, ans_dense
 
 
 
 
-class KwisatzHaderachBH(nn.Module):
+class KwisatzHaderach(nn.Module):
     def __init__(
         self,
         kernel_size=[4, 4, 4],
-        radius_scale=1.5,
+        radius_scale=1,
         coordinate_mapping='ball_to_cube_volume_preserving',
         interpolation='linear',
         use_window=True,
@@ -95,10 +85,10 @@ class KwisatzHaderachBH(nn.Module):
         layer_channels=[32, 64, 64, 3],
         dropout=None,
         activation=None,
-        calc_neighbors=True
+        calc_neighbors=True,
     ):
 
-        super(KwisatzHaderachBH, self).__init__()
+        super(KwisatzHaderach, self).__init__()
         self.kernel_size = kernel_size
         self.radius_scale = radius_scale
         self.coordinate_mapping = coordinate_mapping
@@ -108,7 +98,7 @@ class KwisatzHaderachBH(nn.Module):
         self.time_step = time_step
         self.other_feats_channels = other_feats_channels
         self.layer_channels = layer_channels
-        self.filter_extent = torch.tensor([self.radius_scale * 6 * self.particle_radius], dtype=torch.float32).item()
+        self.filter_extent = torch.tensor([self.radius_scale * 3 * self.particle_radius], dtype=torch.float32).item()
         self.dropout = dropout
         self.activation = activation
         self.calc_neighbors = calc_neighbors
@@ -120,7 +110,7 @@ class KwisatzHaderachBH(nn.Module):
         self.blocks = []
 
 
-        self.convblock0_all = ContinuousConvolutionBlock(kernel_size=self.kernel_size,
+        self.convblock0 = ContinuousConvolutionBlock(kernel_size=self.kernel_size,
                                                 coordinate_mapping=self.coordinate_mapping,
                                                 interpolation=self.interpolation,
                                                 window_function=window_poly6,
@@ -130,33 +120,22 @@ class KwisatzHaderachBH(nn.Module):
                                                 activation=self.activation,
                                                 dropout=self.dropout,
                                                 calc_neighbors=self.calc_neighbors)
-        self.convblock0_bh = ContinuousConvolutionBlock(kernel_size=self.kernel_size,
-                                                coordinate_mapping=self.coordinate_mapping,
-                                                interpolation=self.interpolation,
-                                                window_function=window_poly6,
-                                                in_channels=3 + self.other_feats_channels,
-                                                out_channels=self.layer_channels[0],
-                                                filter_extent=4*self.filter_extent,
-                                                activation=self.activation,
-                                                dropout=self.dropout,
-                                                dense=False)
         
-                                                                 
         
         self.blocks = []
-        self.blocks.append([self.convblock0_all, self.convblock0_bh])
+        self.blocks.append(self.convblock0)
 
 
         for i in range(1, len(self.layer_channels)-1):
             in_ch = self.layer_channels[i - 1]
             if i == 1:
-                in_ch *= 3
+                in_ch *= 2
             out_ch = self.layer_channels[i]
             block = ContinuousConvolutionBlock(kernel_size=self.kernel_size,
                                                 coordinate_mapping=self.coordinate_mapping,
                                                 interpolation=self.interpolation,
                                                 window_function=window_poly6,
-                                                activation=True,
+                                                activation=None,
                                                 dropout=self.dropout,
                                                 in_channels=in_ch,
                                                 out_channels=out_ch,
@@ -177,34 +156,26 @@ class KwisatzHaderachBH(nn.Module):
         
 
 
-    def forward(self, pos, vel, mass, bh_pos, bh_vel, bh_mass):
+    def forward(self, pos, vel, mass=None, extra_feats=None):
         if mass is not None:
             if mass.dim() == 1:
                 mass = mass.unsqueeze(1)
             else:
                 assert mass.dim() == 2
-        if bh_mass is not None:
-            if bh_mass.dim() == 1:
-                bh_mass = bh_mass.unsqueeze(1)
-            else:
-                assert bh_mass.dim() == 2
 
 
         feats = [vel]
         if not mass is None:
             feats.append(mass)
+        if not extra_feats is None:
+            feats.append(extra_feats)
         feats = torch.cat(feats, axis=-1)
 
-        bh_feats = [bh_vel]
-        if not bh_mass is None:
-            bh_feats.append(bh_mass)
-        bh_feats = torch.cat(bh_feats, axis=-1)
+        self.ans_conv0, self.ans_dense0 = self.blocks[0](feats, pos)
 
-        self.ans_conv0_all, self.ans_dense0_all = self.blocks[0][0](feats, pos)
-        self.ans_conv0_bh, _ = self.blocks[0][1](bh_feats, bh_pos, diff_final_positions=pos)
 
         feats = torch.cat([
-        self.ans_conv0_all, self.ans_conv0_bh, self.ans_dense0_all
+        self.ans_conv0, self.ans_dense0
         ],axis=-1)
 
         self.ans_convs = [feats]
@@ -215,11 +186,12 @@ class KwisatzHaderachBH(nn.Module):
                 ans = ans_conv + ans_dense + self.ans_convs[-1]
             else:
                 ans = ans_conv + ans_dense
+            ans = F.relu(ans)
             self.ans_convs.append(ans)
 
         # compute the number of fluid neighbors.
         # this info is used in the loss function during training.
-        self.num_neighbors = self.convblock0_all.num_neighbors
+        self.num_neighbors = self.convblock0.num_neighbors
 
         self.last_features = self.ans_convs[-2]
 
@@ -227,8 +199,6 @@ class KwisatzHaderachBH(nn.Module):
         self.accelerations = self.ans_convs[-1]
         return self.accelerations
 
-
-    
 
 
 
