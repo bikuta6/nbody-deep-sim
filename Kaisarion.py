@@ -71,7 +71,7 @@ class ContinuousConvolutionBlock(nn.Module):
 
 
 
-class KwisatzHaderach(nn.Module):
+class Kaisarion(nn.Module):
     def __init__(
         self,
         kernel_size=[4, 4, 4],
@@ -88,7 +88,7 @@ class KwisatzHaderach(nn.Module):
         calc_neighbors=True,
     ):
 
-        super(KwisatzHaderach, self).__init__()
+        super(Kaisarion, self).__init__()
         self.kernel_size = kernel_size
         self.radius_scale = radius_scale
         self.coordinate_mapping = coordinate_mapping
@@ -164,11 +164,15 @@ class KwisatzHaderach(nn.Module):
                 assert mass.dim() == 2
 
 
-        feats = [vel]
+        feats = []
         if not mass is None:
             feats.append(mass)
+
+        feats.append(vel)
+        
         if not extra_feats is None:
             feats.append(extra_feats)
+
         feats = torch.cat(feats, axis=-1)
 
         self.ans_conv0, self.ans_dense0 = self.blocks[0](feats, pos)
