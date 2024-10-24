@@ -81,7 +81,7 @@ class Kaisarion(nn.Module):
         use_window=True,
         particle_radius=1,
         time_step=0.01,
-        other_feats_channels=1, # mass
+        other_feats_channels=1 + 3 * 3, # mass + past pos * dim
         layer_channels=[32, 64, 64, 3],
         dropout=None,
         activation=None,

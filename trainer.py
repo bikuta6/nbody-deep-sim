@@ -6,11 +6,12 @@ import os
 
 class Trainer:
 
-    def __init__(self,loss_fn, batch_size, device='cuda', scheduler=None):
+    def __init__(self,loss_fn, batch_size, device='cuda', scheduler=None, mode='past'):
         self.loss_fn = loss_fn
         self.device = device
         self.scheduler = scheduler
         self.batch_size = batch_size
+        self.mode = mode
 
     def get_new_pos_vel(self, acc, pos, vel, dt=0.01):
         new_vel = vel + acc * dt 
@@ -25,34 +26,66 @@ class Trainer:
         num_batches = len(data) // self.batch_size
         all_losses = []
         all_dists = []
-        for i in tqdm.tqdm(range(num_batches)):
-            batch = data[i*self.batch_size:(i+1)*self.batch_size]
-            m = torch.tensor([b['masses'] for b in batch], dtype=torch.float32).to(self.device)
-            pos0 = torch.tensor([b['pos'] for b in batch], dtype=torch.float32).to(self.device)
-            vel0 = torch.tensor([b['vel'] for b in batch], dtype=torch.float32).to(self.device)
-            acc0 = torch.tensor([b['acc'] for b in batch], dtype=torch.float32).to(self.device)
+        if self.mode != 'past':
+            for i in tqdm.tqdm(range(num_batches)):
+                batch = data[i*self.batch_size:(i+1)*self.batch_size]
+                m = torch.tensor([b['masses'] for b in batch], dtype=torch.float32).to(self.device)
+                pos0 = torch.tensor([b['pos'] for b in batch], dtype=torch.float32).to(self.device)
+                vel0 = torch.tensor([b['vel'] for b in batch], dtype=torch.float32).to(self.device)
+                acc0 = torch.tensor([b['acc'] for b in batch], dtype=torch.float32).to(self.device)
 
-            optimizer.zero_grad()
-            losses = []
-            for j in range(len(batch)):
-                l = 0
-                sample_masses = m[j].unsqueeze(1)
-                sample_pos0 = pos0[j]
-                sample_vel0 = vel0[j]
-                sample_acc0 = acc0[j]
-
-
-                pr_acc0 = model(sample_pos0, sample_vel0, sample_masses)
-                l+= self.loss_fn(sample_acc0, pr_acc0)
+                optimizer.zero_grad()
+                losses = []
+                for j in range(len(batch)):
+                    l = 0
+                    sample_masses = m[j].unsqueeze(1)
+                    sample_pos0 = pos0[j]
+                    sample_vel0 = vel0[j]
+                    sample_acc0 = acc0[j]
 
 
-                losses.append(l)
+                    pr_acc0 = model(sample_pos0, sample_vel0, sample_masses)
+                    l+= self.loss_fn(sample_acc0, pr_acc0)
 
-            total_loss = 64 * sum(losses) / len(batch)
-            all_losses.append(total_loss.item())
-            total_loss.backward()
 
-            optimizer.step()
+                    losses.append(l)
+
+                total_loss = 64 * sum(losses) / len(batch)
+                all_losses.append(total_loss.item())
+                total_loss.backward()
+
+                optimizer.step()
+        else:
+            for i in tqdm.tqdm(range(num_batches)):
+                batch = data[i*self.batch_size:(i+1)*self.batch_size]
+                m = torch.tensor([b['masses'] for b in batch], dtype=torch.float32).to(self.device)
+                pos0 = torch.tensor([b['pos'] for b in batch], dtype=torch.float32).to(self.device)
+                vel0 = torch.tensor([b['vel'] for b in batch], dtype=torch.float32).to(self.device)
+                acc0 = torch.tensor([b['acc'] for b in batch], dtype=torch.float32).to(self.device)
+                past_pos = torch.tensor([b['past_pos'] for b in batch], dtype=torch.float32).to(self.device)
+
+
+                optimizer.zero_grad()
+                losses = []
+                for j in range(len(batch)):
+                    l = 0
+                    sample_masses = m[j].unsqueeze(1)
+                    sample_pos0 = pos0[j]
+                    sample_vel0 = vel0[j]
+                    sample_acc0 = acc0[j]
+                    sample_past_pos = past_pos[j]
+
+                    pr_acc0 = model(sample_pos0, sample_vel0, sample_masses, sample_past_pos)
+
+                    l+= self.loss_fn(sample_acc0, pr_acc0)
+
+                    losses.append(l)
+
+                total_loss = 64 * sum(losses) / len(batch)
+                all_losses.append(total_loss.item())
+                total_loss.backward()
+
+                optimizer.step()
 
         print(f'Train Loss: {sum(all_losses)/len(all_losses)}, Train L2: {sum(all_dists)/len(all_dists)}')
 

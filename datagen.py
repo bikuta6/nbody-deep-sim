@@ -100,4 +100,28 @@ def generate_dataset(n_scenes=5, window_size = 2, shuffle=True):
 
     return dataset
 
+def generate_dataset_past(n_scenes=5, window_size=4, shuffle=True):
+
+        dataset = []
+        print(f'Generating dataset with {n_scenes} scenes...')
+        for _ in tqdm.tqdm(range(n_scenes)):
+            scene = generate_scene_2gals()
+            frames = scene['frames']
+            masses = scene['masses']
+            for j in range(window_size, len(frames)):
+                sample = {
+                    'masses': masses,
+                    'pos': frames[j]['pos'],
+                    'vel': frames[j]['vel'],
+                    'acc': frames[j]['acc']
+                }
+                past_pos = []
+                for k in range(1, window_size):
+                    past_pos.append(np.array(frames[j-k]['pos']))
+                    #sample['vel_past{}'.format(k)] = frames[j-k]['vel']
+                    #sample['acc_past{}'.format(k)] = frames[j-k]['acc']
+
+                sample['past_pos'] = np.concatenate(past_pos, axis=-1).tolist()
+                dataset.append(sample)
+
 
