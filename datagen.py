@@ -124,4 +124,10 @@ def generate_dataset_past(n_scenes=5, window_size=4, shuffle=True):
                 sample['past_pos'] = np.concatenate(past_pos, axis=-1).tolist()
                 dataset.append(sample)
 
+        if shuffle:
+            np.random.shuffle(dataset)
+
+        return dataset
+
+
 

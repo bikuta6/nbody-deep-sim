@@ -1,15 +1,14 @@
 import torch
 import tqdm
-from datagen import generate_dataset
+from datagen import generate_dataset, generate_dataset_past
 import os
 
 
 class Trainer:
 
-    def __init__(self,loss_fn, batch_size, device='cuda', scheduler=None, mode='past'):
+    def __init__(self,loss_fn, batch_size, device='cuda', mode='past'):
         self.loss_fn = loss_fn
         self.device = device
-        self.scheduler = scheduler
         self.batch_size = batch_size
         self.mode = mode
 
@@ -20,12 +19,8 @@ class Trainer:
 
 
     def train_round(self, data, model, optimizer):
-
-        self.model.train()
-
         num_batches = len(data) // self.batch_size
         all_losses = []
-        all_dists = []
         if self.mode != 'past':
             for i in tqdm.tqdm(range(num_batches)):
                 batch = data[i*self.batch_size:(i+1)*self.batch_size]
@@ -80,17 +75,16 @@ class Trainer:
                     l+= self.loss_fn(sample_acc0, pr_acc0)
 
                     losses.append(l)
-
                 total_loss = 64 * sum(losses) / len(batch)
                 all_losses.append(total_loss.item())
                 total_loss.backward()
 
                 optimizer.step()
 
-        print(f'Train Loss: {sum(all_losses)/len(all_losses)}, Train L2: {sum(all_dists)/len(all_dists)}')
+        print(f'Train Loss: {sum(all_losses)/len(all_losses)}')
 
-    def train(self, model, optimizer, rounds, epochs_per_dataset, scenes_per_dataset=25, weights_dir='./models/'):
-
+    def train(self, model, optimizer, scheduler, rounds, epochs_per_dataset, scenes_per_dataset=25, weights_dir='./models/'):
+        model.train()
         model.to(self.device)
         if weights_dir is not None:
             weight_paths = os.listdir(weights_dir)
@@ -105,12 +99,15 @@ class Trainer:
 
         for i in range(rounds):
             print(f'Round {i}')
-            data = generate_dataset(scenes_per_dataset)
+            if self.mode == 'past':
+                data = generate_dataset_past(scenes_per_dataset)
+            else:
+                data = generate_dataset(scenes_per_dataset)
             for j in range(epochs_per_dataset):
                 print(f'Epoch {j}')
                 self.train_round(data, model, optimizer)
-                if self.scheduler:
-                    self.scheduler.step()
+                if scheduler:
+                    scheduler.step()
 
             if weights_dir is not None:
                 torch.save(model.state_dict(), os.path.join(weights_dir, f'model_{last_model}.pt'))
