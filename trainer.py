@@ -2,6 +2,7 @@ import torch
 import tqdm
 from datagen import generate_dataset, generate_dataset_past
 import os
+import gc
 
 
 class Trainer:
@@ -45,7 +46,7 @@ class Trainer:
 
                     losses.append(l)
 
-                total_loss = 64 * sum(losses) / len(batch)
+                total_loss = sum(losses) / len(batch)
                 all_losses.append(total_loss.item())
                 total_loss.backward()
 
@@ -75,26 +76,36 @@ class Trainer:
                     l+= self.loss_fn(sample_acc0, pr_acc0)
 
                     losses.append(l)
-                total_loss = 64 * sum(losses) / len(batch)
+                total_loss = sum(losses) / len(batch)
                 all_losses.append(total_loss.item())
                 total_loss.backward()
 
                 optimizer.step()
+                del m
+                del pos0
+                del vel0
+                del acc0
+                del past_pos
+                torch.cuda.empty_cache()
+                gc.collect()
 
         print(f'Train Loss: {sum(all_losses)/len(all_losses)}')
 
-    def train(self, model, optimizer, scheduler, rounds, epochs_per_dataset, scenes_per_dataset=25, weights_dir='./models/'):
+    def train(self, model, optimizer, scheduler, rounds, epochs_per_dataset, save_after=5,scenes_per_dataset=25, weights_dir='./models/'):
         model.train()
         model.to(self.device)
         if weights_dir is not None:
             weight_paths = os.listdir(weights_dir)
+            weight_paths.remove('.ipynb_checkpoints')
             weight_paths.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
+            
             try:
                 model.load_state_dict(torch.load(os.path.join(weights_dir, weight_paths[-1])))
                 print(f'Loaded weights from {weight_paths[-1]}')
                 last_model = int(weight_paths[-1].split('_')[1].split('.')[0])
                 last_model += 1
             except:
+                print("No saved weights, starting from zero...")
                 last_model = 0
 
         for i in range(rounds):
@@ -109,11 +120,17 @@ class Trainer:
                 if scheduler:
                     scheduler.step()
 
-            if weights_dir is not None:
+            if (weights_dir is not None) and (i % save_after == 0):
                 torch.save(model.state_dict(), os.path.join(weights_dir, f'model_{last_model}.pt'))
                 print(f'Saved weights to {os.path.join(weights_dir, f"model_{last_model}.pt")}')
                 last_model += 1
+            del data
+            if self.device == 'cuda':
+                torch.cuda.empty_cache()
+            gc.collect()
 
         return model
 
-        
+# !nvidia-smi
+
+
