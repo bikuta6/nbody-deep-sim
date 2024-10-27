@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import tqdm
 from datagen import generate_dataset, generate_dataset_past, generate_dataset_transformer
 import os
@@ -22,7 +23,7 @@ class Trainer:
     def train_round(self, data, model, optimizer):
         num_batches = len(data) // self.batch_size
         all_losses = []
-        if self.mode != 'past':
+        if self.mode == 'present':
             for i in tqdm.tqdm(range(num_batches)):
                 batch = data[i*self.batch_size:(i+1)*self.batch_size]
                 m = torch.tensor([b['masses'] for b in batch], dtype=torch.float32).to(self.device)
@@ -62,8 +63,8 @@ class Trainer:
         elif self.mode == 'transformer':
             for i in tqdm.tqdm(range(num_batches)):
                 batch = data[i*self.batch_size:(i+1)*self.batch_size]
-                inputs = torch.tensor([b['inputs'] for b in batch], dtype=torch.float32).to(self.device)
-                accelerations = torch.tensor([b['accelerations'] for b in batch], dtype=torch.float32).to(self.device)
+                inputs = torch.tensor(np.array([b['inputs'] for b in batch]), dtype=torch.float32).to(self.device)
+                accelerations = torch.tensor(np.array([b['accelerations'] for b in batch]), dtype=torch.float32).to(self.device)
 
 
                 optimizer.zero_grad()
@@ -86,7 +87,7 @@ class Trainer:
                 del inputs
                 del accelerations
                 torch.cuda.empty_cache()
-        else:
+        elif self.mode == 'past':
             for i in tqdm.tqdm(range(num_batches)):
                 batch = data[i*self.batch_size:(i+1)*self.batch_size]
                 m = torch.tensor([b['masses'] for b in batch], dtype=torch.float32).to(self.device)
@@ -130,7 +131,10 @@ class Trainer:
         model.to(self.device)
         if weights_dir is not None:
             weight_paths = os.listdir(weights_dir)
-            weight_paths.remove('.ipynb_checkpoints')
+            try:
+                weight_paths.remove('.ipynb_checkpoints')
+            except:
+                pass
             weight_paths.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
             
             try:
