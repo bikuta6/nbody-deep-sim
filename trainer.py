@@ -1,6 +1,6 @@
 import torch
 import tqdm
-from datagen import generate_dataset, generate_dataset_past
+from datagen import generate_dataset, generate_dataset_past, generate_dataset_transformer
 import os
 import gc
 
@@ -45,12 +45,47 @@ class Trainer:
 
 
                     losses.append(l)
+                
+                del m
+                del pos0
+                del vel0
+                del acc0
+
+                torch.cuda.empty_cache()
 
                 total_loss = sum(losses) / len(batch)
                 all_losses.append(total_loss.item())
                 total_loss.backward()
 
                 optimizer.step()
+
+        elif self.mode == 'transformer':
+            for i in tqdm.tqdm(range(num_batches)):
+                batch = data[i*self.batch_size:(i+1)*self.batch_size]
+                inputs = torch.tensor([b['inputs'] for b in batch], dtype=torch.float32).to(self.device)
+                accelerations = torch.tensor([b['accelerations'] for b in batch], dtype=torch.float32).to(self.device)
+
+
+                optimizer.zero_grad()
+                losses = []
+                for j in range(len(batch)):
+                    l = 0
+                    sample_inputs = inputs[j]
+                    sample_acc = accelerations[j]
+
+                    pr_acc = model(sample_inputs)
+
+                    l+= self.loss_fn(sample_acc, pr_acc)
+
+                    losses.append(l)
+                total_loss = sum(losses) / len(batch)
+                all_losses.append(total_loss.item())
+                total_loss.backward()
+
+                optimizer.step()
+                del inputs
+                del accelerations
+                torch.cuda.empty_cache()
         else:
             for i in tqdm.tqdm(range(num_batches)):
                 batch = data[i*self.batch_size:(i+1)*self.batch_size]
@@ -87,7 +122,6 @@ class Trainer:
                 del acc0
                 del past_pos
                 torch.cuda.empty_cache()
-                gc.collect()
 
         print(f'Train Loss: {sum(all_losses)/len(all_losses)}')
 
@@ -112,6 +146,8 @@ class Trainer:
             print(f'Round {i}')
             if self.mode == 'past':
                 data = generate_dataset_past(scenes_per_dataset)
+            elif self.mode == 'transformer':
+                data = generate_dataset_transformer(scenes_per_dataset)
             else:
                 data = generate_dataset(scenes_per_dataset)
             for j in range(epochs_per_dataset):

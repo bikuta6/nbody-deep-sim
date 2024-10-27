@@ -1,6 +1,7 @@
 from sim import NBodySimulation, generateDisk3Dv3
 import numpy as np
 import tqdm
+import random
 
 def gen_params():
     return {
@@ -96,7 +97,7 @@ def generate_dataset(n_scenes=5, window_size = 2, shuffle=True):
                 sample['acc_next{}'.format(k)] = frames[j+k]['acc']
             dataset.append(sample)
     if shuffle:
-        np.random.shuffle(dataset)
+        random.shuffle(dataset)
 
     return dataset
 
@@ -125,7 +126,40 @@ def generate_dataset_past(n_scenes=5, window_size=4, shuffle=True):
                 dataset.append(sample)
 
         if shuffle:
-            np.random.shuffle(dataset)
+            random.shuffle(dataset)
+
+        return dataset
+
+def generate_dataset_transformer(n_scenes=5, window_size=4, shuffle=True):
+
+        dataset = []
+        print(f'Generating dataset with {n_scenes} scenes...')
+        for _ in tqdm.tqdm(range(n_scenes)):
+            scene = generate_scene_2gals()
+            frames = scene['frames']
+            masses = np.array(scene['masses']).reshape(-1, 1)
+            for j in range(window_size, len(frames)):
+                sample = {}
+                inputs = []
+                for k in range(window_size):
+                    time_step_pos = np.array(frames[j-window_size+k]['pos'])
+                    time_stemp_vel = np.array(frames[j-window_size+k]['vel'])
+                    time_step_masses = masses
+                    time_step_input = np.concatenate([time_step_pos, time_stemp_vel, time_step_masses], axis=-1)
+                    inputs.append(time_step_input)
+
+                actual_pos = np.array(frames[j]['pos'])
+                actual_vel = np.array(frames[j]['vel'])
+                actual_masses = masses
+                actual_input = np.concatenate([actual_pos, actual_vel, actual_masses], axis=-1)
+                inputs.append(actual_input)
+                accelerations = np.array(frames[j]['acc'])
+                sample['inputs'] = np.array(inputs)
+                sample['accelerations'] = accelerations
+                dataset.append(sample)
+
+        if shuffle:
+            random.shuffle(dataset)
 
         return dataset
 
