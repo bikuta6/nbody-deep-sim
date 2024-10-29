@@ -39,12 +39,10 @@ class Trainer:
                     sample_pos0 = pos0[j]
                     sample_vel0 = vel0[j]
                     sample_acc0 = acc0[j]
-
-                    feats = torch.cat([sample_masses, sample_vel0], dim=1)
-
-
-                    pr_acc0 = model(feats, sample_pos0)
-                    l+= self.loss_fn(sample_acc0, pr_acc0)
+                    
+                    #feats = torch.cat([sample_masses, sample_vel0], dim=1)
+                    pr_acc0 = model(sample_masses, sample_pos0)
+                    l+= self.loss_fn(sample_acc0, pr_acc0, model.num_neighbors)
 
 
                     losses.append(l)
