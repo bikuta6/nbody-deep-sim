@@ -552,6 +552,112 @@ def generateDisk3Dv4(nbStars, radius, Mass, bh_Mass_percentage, zOffsetMax, grav
     return [Particle(mass, pos, vel, type=t) for mass, pos, vel, t in zip(masses, positions, velocities, types)]
 
 
+def generateDisk3Dv5(nbStars, radius, Mass, zOffsetMax, gravityCst, distribution, dist_params={}, seed=None, offset=[0, 0, 0], initial_vel=[0, 0, 0], clockwise=True, angle=[0, 0, 0], t=None):
+    np.random.seed(seed)
+    '''
+    Generate a 3D disk of stars with a central black hole
+    Parameters:
+    - nbStars: number of stars in the disk
+    - radius: radius of the disk
+    - mass: mass of each star
+    - Mass: mass of the central black hole
+    - zOffsetMax: maximum offset in z direction
+    - gravityCst: gravitational constant
+    - distribution: distribution of the stars in the disk (plummer, hernquist, jaffe, isothermal, uniform)
+    - dist_params: parameters of the distribution
+    - seed: random seed
+    - offset: offset of the disk
+    - initial_vel: initial velocity of the disk
+    - clockwise: direction of rotation of the disk
+    '''
+
+    # Calculating positions
+    positions = np.zeros(shape=(nbStars, 3)) 
+    distances = np.sqrt(np.random.random((nbStars,))) + 0.1 * radius
+    # if any of the distances is 0, we set it to the machine epsilon
+    distances[distances == 0] = np.finfo(np.float32).eps
+
+    types = ['star'] * (nbStars)
+    zOffsets = (np.random.random((nbStars,)) - 0.5) * 2 * zOffsetMax * (np.ones_like(distances) - np.sqrt(distances))
+
+    distances = distances * radius
+    angles = np.random.random((nbStars,)) * 2 * np.pi
+    positions[:, 0] = np.cos(angles) * distances
+    positions[:, 1] = np.sin(angles) * distances
+    positions[:, 2] = zOffsets
+
+    # Calculating speeds
+    velocities = np.zeros(shape=(nbStars, 3))
+
+    # Assigning masses
+    masses = np.ones(nbStars)
+
+    M = Mass
+
+    # Calculate masses based on the chosen distribution
+    for i in range(nbStars):
+        types[i] = 'star'
+        if distribution == 'plummer':
+            masses[i] = sphericalPlummerDistribution(distances[i], **dist_params)
+        elif distribution == 'hernquist':
+            masses[i] = sphericalHernquistDistribution(distances[i], M=M,r0=1)
+        elif distribution == 'jaffe':
+            masses[i] = sphericalJaffeDistribution(distances[i], **dist_params)
+        elif distribution == 'isothermal':
+            masses[i] = isothermalSphereDistribution(distances[i], **dist_params)
+        elif distribution == 'uniform':
+            masses[i] = uniformSphereDistribution(distances[i], **dist_params)
+        else:
+            raise ValueError("Unsupported distribution type")
+        
+
+    # Normalize masses to sum to 'Mass'
+    masses = masses * M / np.sum(masses)
+
+    # Compute velocities
+    for i in range(nbStars):
+        mask = distances <= distances[i]
+        internalMass = np.sum(masses[mask])  # Sum of enclosed mass
+        velNorm = np.sqrt(gravityCst * internalMass / distances[i])
+        velocities[i, 0] = velNorm * np.cos(angles[i] + np.pi / 2)
+        velocities[i, 1] = velNorm * np.sin(angles[i] + np.pi / 2)
+        velocities[i, 2] = np.zeros_like(velocities[i, 2])
+
+    # Apply clockwise or counter-clockwise rotation
+    if clockwise:
+        velocities[:, 0] = -velocities[:, 0]
+        velocities[:, 1] = -velocities[:, 1]
+
+    # Rotate the disk
+    angle = np.array(angle)
+
+    Rx = np.vstack([[1, 0, 0], [0, np.cos(angle[0]), -np.sin(angle[0]),], [0, np.sin(angle[0]), np.cos(angle[0])]])
+    
+    Ry = np.vstack([[np.cos(angle[1]), 0, np.sin(angle[1])], [0, 1, 0], [-np.sin(angle[1]), 0, np.cos(angle[1])]])
+
+    Rz = np.vstack([[np.cos(angle[2]), -np.sin(angle[2]), 0], [np.sin(angle[2]), np.cos(angle[2]), 0], [0, 0, 1]])
+    
+    positions = np.dot(Rx, positions.T).T
+    positions = np.dot(Ry, positions.T).T
+    velocities = np.dot(Rx, velocities.T).T
+    velocities = np.dot(Ry, velocities.T).T
+    positions = np.dot(Rz, positions.T).T
+    velocities = np.dot(Rz, velocities.T).T
+
+    # Adding offset
+    for i in range(nbStars):
+        positions[i] += offset
+        velocities[i] += initial_vel
+
+
+    return [Particle(mass, pos, vel, type=t) for mass, pos, vel, t in zip(masses, positions, velocities, types)]
+
+
+                   
+
+
+
+
 
 def nfw_distribution(N, r_s, seed=None):
     """
