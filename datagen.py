@@ -71,7 +71,7 @@ def generate_scene_2gals():
 
 def generate_scene_1gal():
     params = {
-        'nbStars':100,
+        'nbStars':500,
         'radius': 1,
         'Mass': 1,
         'zOffsetMax': float(np.random.uniform(0, 0.1)),
