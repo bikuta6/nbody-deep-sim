@@ -69,6 +69,62 @@ def generate_scene_2gals():
 
     return final_json
 
+def generate_scene_1gal():
+    params = {
+        'nbStars':100,
+        'radius': 1,
+        'Mass': 1,
+        'zOffsetMax': float(np.random.uniform(0, 0.1)),
+        'gravityCst': 1.0,
+        'distribution': 'hernquist',
+        'offset': [float(np.random.uniform(-1, 1)), float(np.random.uniform(-1, 1)), float(np.random.uniform(-1, 1))],
+        'initial_vel': [float(np.random.uniform(-0.1, 0.1)), float(np.random.uniform(-0.1, 0.1)), float(np.random.uniform(-0.1, 0.1))],
+        'clockwise': int(np.random.choice([0])),
+        'angle': [float(np.random.uniform(-1, 1)*2*np.pi/4), float(np.random.uniform(-1, 1)*2*np.pi/4), float(np.random.uniform(-1, 1)*2*np.pi/4)]
+    }
+    particles = generateDisk3Dv3(**params)
+
+    t_end = 10.0
+    dt = 0.01
+    softening = 0.1
+    G = 1.0
+
+    sim = NBodySimulation(particles, G, softening, dt)
+
+    pos, vel, acc, KE, PE, _, masses, types = sim.run(t_end=t_end, save_states=True)
+
+    # Convert all arrays to lists
+    pos = np.array(pos).transpose(2, 0, 1)
+    vel = np.array(vel).transpose(2, 0, 1)
+    acc = np.array(acc).transpose(2, 0, 1)
+    KE = KE.flatten().astype(float).tolist()  # Ensure floats
+    PE = PE.flatten().astype(float).tolist()  # Ensure floats
+    masses = masses.flatten().astype(float).tolist()  # Ensure floats
+
+    frames = []
+    for i in range(len(pos)):
+        frames.append({
+            'frame': int(i),  # Ensure the frame index is an int
+            'pos': pos[i].tolist(),
+            'vel': vel[i].tolist(),
+            'acc': acc[i].tolist()
+        })
+
+    final_json = {
+        'galaxy_params': params,
+        'dt': float(dt),
+        'softening': float(softening),
+        'G': float(G),
+        't_end': float(t_end),
+        'masses': [float(m) for m in masses],
+        'KE': KE,
+        'PE': PE,
+        'frames': frames,
+        'types': types
+    }
+
+    return final_json
+
 def generate_n_body_scene(n_bodies=3):
     particles = []
     for _ in range(n_bodies):
@@ -150,6 +206,35 @@ def generate_dataset(n_scenes=5, window_size = 2, shuffle=True):
         types= np.array(scene['types'])
         bh_index = np.where(types == "black hole")[0]
         frames = scene['frames']
+        masses = scene['masses']
+        for j in range(len(frames)-window_size):
+            sample = {
+                'masses': masses,
+                'bh_index': bh_index,
+                'pos': frames[j]['pos'],
+                'vel': frames[j]['vel'],
+                'acc': frames[j]['acc']
+            }
+            for k in range(1, window_size):
+                sample['pos_next{}'.format(k)] = frames[j+k]['pos']
+                sample['vel_next{}'.format(k)] = frames[j+k]['vel']
+                sample['acc_next{}'.format(k)] = frames[j+k]['acc']
+            dataset.append(sample)
+    if shuffle:
+        random.shuffle(dataset)
+
+    return dataset
+
+def generate_dataset_1gal(n_scenes=5, window_size=4, shuffle=True):
+    
+    dataset = []
+    
+    print(f'Generating dataset with {n_scenes} scenes...')
+    for _ in tqdm.tqdm(range(n_scenes)):
+        scene = generate_scene_1gal()
+        types= np.array(scene['types'])
+        bh_index = np.where(types == "black hole")[0]
+        frames = scene['frames'][25:]
         masses = scene['masses']
         for j in range(len(frames)-window_size):
             sample = {
