@@ -69,9 +69,9 @@ def generate_scene_2gals():
 
     return final_json
 
-def generate_scene_1gal():
+def generate_scene_1gal(particles=500):
     params = {
-        'nbStars':500,
+        'nbStars': particles,
         'radius': 1,
         'Mass': 1,
         'zOffsetMax': float(np.random.uniform(0, 0.1)),
@@ -225,21 +225,19 @@ def generate_dataset(n_scenes=5, window_size = 2, shuffle=True):
 
     return dataset
 
-def generate_dataset_1gal(n_scenes=5, window_size=4, shuffle=True):
+def generate_dataset_1gal(n_scenes=5, window_size=4, shuffle=True, particles=500):
     
     dataset = []
     
     print(f'Generating dataset with {n_scenes} scenes...')
     for _ in tqdm.tqdm(range(n_scenes)):
-        scene = generate_scene_1gal()
+        scene = generate_scene_1gal(particles)
         types= np.array(scene['types'])
-        bh_index = np.where(types == "black hole")[0]
         frames = scene['frames'][25:]
         masses = scene['masses']
         for j in range(len(frames)-window_size):
             sample = {
                 'masses': masses,
-                'bh_index': bh_index,
                 'pos': frames[j]['pos'],
                 'vel': frames[j]['vel'],
                 'acc': frames[j]['acc']
