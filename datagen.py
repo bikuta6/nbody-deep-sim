@@ -69,11 +69,17 @@ def generate_scene_2gals():
 
     return final_json
 
-def generate_scene_1gal(particles=500):
+def generate_scene_1gal(n=None, R=None, M=None):
+    if n is None:
+        n = np.random.randint(100, 250)
+    if R is None:
+        R = np.random.uniform(1.0, 2.0)
+    if M is None:
+        M = np.random.uniform(0.5, 1.5)
     params = {
-        'nbStars': particles,
-        'radius': 1,
-        'Mass': 1,
+        'nbStars': n,
+        'radius': R,
+        'Mass': M,
         'zOffsetMax': float(np.random.uniform(0, 0.1)),
         'gravityCst': 1.0,
         'distribution': 'hernquist',
@@ -225,13 +231,13 @@ def generate_dataset(n_scenes=5, window_size = 2, shuffle=True):
 
     return dataset
 
-def generate_dataset_1gal(n_scenes=5, window_size=4, shuffle=True, particles=500):
+def generate_dataset_1gal(n_scenes=5, window_size=4, shuffle=True, n=None, R=None, M=None):
     
     dataset = []
     
     print(f'Generating dataset with {n_scenes} scenes...')
     for _ in tqdm.tqdm(range(n_scenes)):
-        scene = generate_scene_1gal(particles)
+        scene = generate_scene_1gal(n, R, M)
         types= np.array(scene['types'])
         frames = scene['frames'][25:]
         masses = scene['masses']
