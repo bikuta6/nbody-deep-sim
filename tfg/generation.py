@@ -3,8 +3,6 @@ import torch
 import random
 from simulator import Simulator, generateDisk3Dv3
 from torch.utils.data import Dataset
-from torch_geometric.data import Data
-from torch_geometric.nn import radius_graph
 
 def gen_params(device="cpu"):
     return {
@@ -18,7 +16,6 @@ def gen_params(device="cpu"):
         'clockwise': int(torch.randint(0, 2, (1,), device=device).item()),
         'angle': ((torch.rand(3, device=device) * 2 - 1) * 2 * torch.pi).tolist()
     }
-
 
 def generate_scene_random(N, frames=1000, device='cpu'):
 
@@ -63,7 +60,8 @@ def generate_scene_multidisk(num_disks, frames=1000, device='cpu'):
 
 
 class NBodyDataset(Dataset):
-    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, device='cpu'):
+    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, device='cpu', previous_pos=0):
+        self.positions = []
         self.feats = []
         self.y = []
         
@@ -78,12 +76,27 @@ class NBodyDataset(Dataset):
                 raise ValueError(f"Unknown type {type}")
             
             positions = torch.stack([s['positions'] for s in scene], dim=0)
-            feats = torch.cat((positions, mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1)), dim=-1)
-            y = torch.stack([s['accelerations'] for s in scene[1:]], dim=0)
+
+            pos_feat_list = []
+    
+            for i in range(previous_pos):
+                shifted_positions = torch.roll(positions, shifts=i+1, dims=0)
+                shifted_positions[:i+1] = 0  # Set the first `i+1` frames to 0 (no previous data available)
+                pos_feat_list.append(shifted_positions)
             
+            if previous_pos > 0:
+                pos_feat_list = torch.cat(pos_feat_list, dim=-1)
+                feats = torch.cat((mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1), pos_feat_list), dim=-1)
+            else:
+                feats = mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1)
+
+            y = torch.stack([s['accelerations'] for s in scene], dim=0) 
+            self.positions.append(positions)
             self.feats.append(feats)
             self.y.append(y)
         
+
+        self.positions = torch.cat(self.positions, dim=0)
         self.feats = torch.cat(self.feats, dim=0)
         self.y = torch.cat(self.y, dim=0)
         
@@ -95,35 +108,6 @@ class NBodyDataset(Dataset):
     
 
 
-
-class NBodyGraphDataset(Dataset):
-    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, radius=0.5, device='cpu'):
-        self.graphs = []
-        
-        for _ in tqdm.tqdm(range(num_scenes)):
-            if type == 'disk':
-                scene, mass = generate_scene_disk(frames=frames, device=device)
-            elif type == 'random':
-                scene, mass = generate_scene_random(250, frames=frames, device=device)
-            elif type == 'multidisk':
-                scene, mass = generate_scene_multidisk(num_disks, frames=frames, device=device)
-            else:
-                raise ValueError(f"Unknown type {type}")
-            
-            positions = torch.stack([s['positions'] for s in scene], dim=0)
-            feats = torch.cat((positions, mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1)), dim=-1)
-            y = torch.stack([s['accelerations'] for s in scene[1:]], dim=0)
-            
-            edge_index = radius_graph(positions.view(-1, 3), r=radius, loop=False)
-            
-            graph = Data(x=feats, edge_index=edge_index, y=y)
-            self.graphs.append(graph)
-        
-    def __len__(self):
-        return len(self.graphs)
-    
-    def __getitem__(self, idx):
-        return self.graphs[idx]
 
 
 
