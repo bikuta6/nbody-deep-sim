@@ -32,7 +32,7 @@ def generate_scene_random(N, frames=1000, device='cpu'):
 
 def generate_scene_disk(frames=1000, device='cpu'):
     params = gen_params(device=device)
-    pos, vel, mass = generateDisk3Dv3(**params, nbStars=250, device=device)
+    pos, vel, mass = generateDisk3Dv3(**params, device=device)
     
     sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device)
 
@@ -104,7 +104,7 @@ class NBodyDataset(Dataset):
         return self.feats.shape[0]
     
     def __getitem__(self, idx):
-        return self.feats[idx], self.y[idx]
+        return self.positions[idx], self.feats[idx], self.y[idx]
     
 
 
