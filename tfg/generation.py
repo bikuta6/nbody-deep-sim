@@ -70,7 +70,7 @@ class NBodyDataset(Dataset):
         self.U = []
         self.K = []
         
-        for _ in tqdm.tqdm(range(num_scenes)):
+        for _ in range(num_scenes):
             if type == 'disk':
                 scene, mass = generate_scene_disk(frames=frames, device=device, energy=energy)
             elif type == 'random':

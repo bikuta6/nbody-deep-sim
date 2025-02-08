@@ -52,7 +52,8 @@ class Trainer:
             print(f"Run {i+1}: Loss: {train_losses[-1]}, MSE Loss: {train_mse_losses[-1]}")
             if i % save_every == 0:
                 torch.save(self.model.state_dict(), f'{path}/model_{i}.pt')
-        torch.save(self.model.state_dict(), f'{path}/model_final.pt')
+        if save_every > 0:
+            torch.save(self.model.state_dict(), f'{path}/model_final.pt')
 
 
 
