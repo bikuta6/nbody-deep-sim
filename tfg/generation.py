@@ -17,30 +17,30 @@ def gen_params(device="cpu"):
         'angle': ((torch.rand(3, device=device) * 2 - 1) * 2 * torch.pi).tolist()
     }
 
-def generate_scene_random(N, frames=1000, device='cpu'):
+def generate_scene_random(N, frames=1000, device='cpu', energy=False):
 
     pos = torch.rand((N, 3), device=device) * 6 - 3
     vel = torch.rand((N, 3), device=device) * 0.2 - 0.1
     masses = torch.rand((N,), device=device)
     masses = masses / masses.sum()
 
-    sim = Simulator(positions=pos, velocities=vel, masses=masses, device=device)
+    sim = Simulator(positions=pos, velocities=vel, masses=masses, device=device, energy=energy)
 
     scene = sim.run(frames)
 
     return scene, masses
 
-def generate_scene_disk(frames=1000, device='cpu'):
+def generate_scene_disk(frames=1000, device='cpu', energy=False):
     params = gen_params(device=device)
     pos, vel, mass = generateDisk3Dv3(**params, device=device)
     
-    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device)
+    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device, energy=energy)
 
     scene = sim.run(frames)
 
     return scene, mass
 
-def generate_scene_multidisk(num_disks, frames=1000, device='cpu'):
+def generate_scene_multidisk(num_disks, frames=1000, device='cpu', energy=False):
     params = [gen_params(device=device) for _ in range(num_disks)]
 
     pos, vel, mass = generateDisk3Dv3(**params[0], device=device)
@@ -52,7 +52,7 @@ def generate_scene_multidisk(num_disks, frames=1000, device='cpu'):
         vel = torch.cat((vel, vel_), dim=0)
         mass = torch.cat((mass, mass_), dim=0)
 
-    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device)
+    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device, energy=energy)
 
     scene = sim.run(frames)
 
@@ -60,22 +60,32 @@ def generate_scene_multidisk(num_disks, frames=1000, device='cpu'):
 
 
 class NBodyDataset(Dataset):
-    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, device='cpu', previous_pos=0):
+    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, device='cpu', previous_pos=0, energy=False):
+        self.device = device
+        self.energy = energy
         self.positions = []
         self.feats = []
         self.y = []
+
+        self.U = []
+        self.K = []
         
         for _ in tqdm.tqdm(range(num_scenes)):
             if type == 'disk':
-                scene, mass = generate_scene_disk(frames=frames, device=device)
+                scene, mass = generate_scene_disk(frames=frames, device=device, energy=energy)
             elif type == 'random':
-                scene, mass = generate_scene_random(250, frames=frames, device=device)
+                scene, mass = generate_scene_random(250, frames=frames, device=device, energy=energy)
             elif type == 'multidisk':
-                scene, mass = generate_scene_multidisk(num_disks, frames=frames, device=device)
+                scene, mass = generate_scene_multidisk(num_disks, frames=frames, device=device, energy=energy)
             else:
                 raise ValueError(f"Unknown type {type}")
             
             positions = torch.stack([s['positions'] for s in scene], dim=0)
+            velocities = torch.stack([s['velocities'] for s in scene], dim=0)
+
+            if self.energy:
+                Us = torch.stack([s['U'] for s in scene], dim=0)
+                Ks = torch.stack([s['K'] for s in scene], dim=0)
 
             pos_feat_list = []
     
@@ -86,25 +96,34 @@ class NBodyDataset(Dataset):
             
             if previous_pos > 0:
                 pos_feat_list = torch.cat(pos_feat_list, dim=-1)
-                feats = torch.cat((mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1), pos_feat_list), dim=-1)
+                feats = torch.cat((mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1), velocities, pos_feat_list), dim=-1)
             else:
-                feats = mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1)
+                feats = torch.cat((mass.unsqueeze(0).repeat(positions.size(0), 1).unsqueeze(-1), velocities), dim=-1)
 
             y = torch.stack([s['accelerations'] for s in scene], dim=0) 
             self.positions.append(positions)
             self.feats.append(feats)
             self.y.append(y)
+
+            if self.energy:
+                self.U.append(Us)
+                self.K.append(Ks)
         
 
         self.positions = torch.cat(self.positions, dim=0)
         self.feats = torch.cat(self.feats, dim=0)
         self.y = torch.cat(self.y, dim=0)
+        if self.energy:
+            self.U = torch.cat(self.U, dim=0)
+            self.K = torch.cat(self.K, dim=0)
         
     def __len__(self):
         return self.feats.shape[0]
     
     def __getitem__(self, idx):
-        return self.positions[idx], self.feats[idx], self.y[idx]
+        if not self.energy:
+            return self.positions[idx], self.feats[idx], self.y[idx], None, None
+        return self.positions[idx], self.feats[idx], self.y[idx], self.U[idx], self.K[idx]
     
 
 

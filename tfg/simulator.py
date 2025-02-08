@@ -1,7 +1,7 @@
 import torch
 
 class Simulator:
-    def __init__(self, positions, velocities, masses, G=1.0, softening=0.1, dt=0.01, device='cpu'):
+    def __init__(self, positions, velocities, masses, G=1.0, softening=0.1, dt=0.01, energy=True, device='cpu'):
         self.positions = positions.to(device)
         self.velocities = velocities.to(device)
         self.masses = masses.to(device)
@@ -11,6 +11,7 @@ class Simulator:
         self.device = device
         self.acc = torch.zeros_like(self.positions)
         self.memory = []
+        self.calc_energy = energy
 
     def accelerations(self):
         x, y, z = self.positions[:, 0:1], self.positions[:, 1:2], self.positions[:, 2:3]
@@ -59,7 +60,7 @@ class Simulator:
         self.memory = []
 
     def step(self):
-        # Update velocities: v(t+dt) = v(t) + a(t)*dt
+        # Update velocities: v(t+dt) = v(t) + a(t)*dt / 2 to make the leapfrog integrator time-symmetric
         self.velocities += self.acc * self.dt / 2.0
 
         # Update positions: r(t+dt) = r(t) + v(t)*dt
@@ -67,21 +68,46 @@ class Simulator:
 
         # Update accelerations based on the new positions
         self.accelerations()  # Recompute accelerations with new positions
-        
+
+        if self.calc_energy:
+            U, K = self.energy()
+            self.memory[-1]['U'] = U    
+            self.memory[-1]['K'] = K
+
+            self.memory.append({
+                'positions': self.positions.clone(),
+                'velocities': self.velocities.clone(),
+                'accelerations': self.acc.clone(),
+            })
+
+        else:
+            self.memory.append({
+                'positions': self.positions.clone(),
+                'velocities': self.velocities.clone(),
+                'accelerations': self.acc.clone()
+            })
+
+        # Update velocities: v(t+dt) = v(t) + a(t)*dt / 2 to complete the leapfrog step
         self.velocities += self.acc * self.dt / 2.0
-        # Store the new state (positions, velocities, accelerations)
+
+
+    def run(self, steps):
+
+        self.accelerations()
+
         self.memory.append({
             'positions': self.positions.clone(),
             'velocities': self.velocities.clone(),
             'accelerations': self.acc.clone()
         })
 
-    def run(self, steps):
-
-        self.accelerations()
-
         for _ in range(steps):
             self.step()
+
+        if self.calc_energy:
+            U, K = self.energy()
+            self.memory[-1]['U'] = U
+            self.memory[-1]['K'] = K
 
         return self.memory
     
