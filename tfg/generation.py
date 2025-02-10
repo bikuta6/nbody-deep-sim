@@ -11,36 +11,36 @@ def gen_params(device="cpu"):
         'Mass': 1,
         'zOffsetMax': torch.rand(1, device=device).item() * 0.5,
         'gravityCst': 1.0,
-        'offset': (torch.rand(3, device=device) * 2 - 1).tolist(),
+        'offset': (torch.rand(3, device=device) * 3 - 1.5).tolist(),
         'initial_vel': (torch.rand(3, device=device) * 0.2 - 0.1).tolist(),
         'clockwise': int(torch.randint(0, 2, (1,), device=device).item()),
         'angle': ((torch.rand(3, device=device) * 2 - 1) * 2 * torch.pi).tolist()
     }
 
-def generate_scene_random(N, frames=1000, device='cpu', energy=False):
+def generate_scene_random(N, frames=1000, device='cpu', energy=False, dt=0.01):
 
     pos = torch.rand((N, 3), device=device) * 6 - 3
     vel = torch.rand((N, 3), device=device) * 0.2 - 0.1
     masses = torch.rand((N,), device=device)
     masses = masses / masses.sum()
 
-    sim = Simulator(positions=pos, velocities=vel, masses=masses, device=device, energy=energy)
+    sim = Simulator(positions=pos, velocities=vel, masses=masses, device=device, energy=energy, dt=dt)
 
     scene = sim.run(frames)
 
     return scene, masses
 
-def generate_scene_disk(frames=1000, device='cpu', energy=False):
+def generate_scene_disk(frames=1000, device='cpu', energy=False, dt=0.01):
     params = gen_params(device=device)
     pos, vel, mass = generateDisk3Dv3(**params, device=device)
     
-    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device, energy=energy)
+    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device, energy=energy, dt=dt)
 
     scene = sim.run(frames)
 
     return scene, mass
 
-def generate_scene_multidisk(num_disks, frames=1000, device='cpu', energy=False):
+def generate_scene_multidisk(num_disks, frames=1000, device='cpu', energy=False, dt=0.01):
     params = [gen_params(device=device) for _ in range(num_disks)]
 
     pos, vel, mass = generateDisk3Dv3(**params[0], device=device)
@@ -52,7 +52,7 @@ def generate_scene_multidisk(num_disks, frames=1000, device='cpu', energy=False)
         vel = torch.cat((vel, vel_), dim=0)
         mass = torch.cat((mass, mass_), dim=0)
 
-    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device, energy=energy)
+    sim = Simulator(positions=pos, velocities=vel, masses=mass, device=device, energy=energy, dt=dt)
 
     scene = sim.run(frames)
 
@@ -60,7 +60,7 @@ def generate_scene_multidisk(num_disks, frames=1000, device='cpu', energy=False)
 
 
 class NBodyDataset(Dataset):
-    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, device='cpu', previous_pos=0, energy=False):
+    def __init__(self, type='disk', num_disks=1, num_scenes=10, frames=1000, device='cpu', previous_pos=0, energy=False, dt=0.01):
         self.device = device
         self.energy = energy
         self.positions = []
@@ -72,11 +72,11 @@ class NBodyDataset(Dataset):
         
         for _ in range(num_scenes):
             if type == 'disk':
-                scene, mass = generate_scene_disk(frames=frames, device=device, energy=energy)
+                scene, mass = generate_scene_disk(frames=frames, device=device, energy=energy, dt=dt)
             elif type == 'random':
-                scene, mass = generate_scene_random(250, frames=frames, device=device, energy=energy)
+                scene, mass = generate_scene_random(250, frames=frames, device=device, energy=energy, dt=dt)
             elif type == 'multidisk':
-                scene, mass = generate_scene_multidisk(num_disks, frames=frames, device=device, energy=energy)
+                scene, mass = generate_scene_multidisk(num_disks, frames=frames, device=device, energy=energy, dt=dt)
             else:
                 raise ValueError(f"Unknown type {type}")
             
@@ -122,7 +122,7 @@ class NBodyDataset(Dataset):
     
     def __getitem__(self, idx):
         if not self.energy:
-            return self.positions[idx], self.feats[idx], self.y[idx], None, None
+            return self.positions[idx], self.feats[idx], self.y[idx], 0.0, 0.0
         return self.positions[idx], self.feats[idx], self.y[idx], self.U[idx], self.K[idx]
     
 

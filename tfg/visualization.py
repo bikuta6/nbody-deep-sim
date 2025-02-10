@@ -20,5 +20,5 @@ def animate_scene(positions):
         ax.set_zlim(-4, 4)
         ax.scatter(positions[i, :, 0], positions[i, :, 1], positions[i, :, 2])
 
-    ani = FuncAnimation(fig, update, frames=range(positions.shape[0]), interval=10)
+    ani = FuncAnimation(fig, update, frames=range(positions.shape[0]), interval=100)
     return ani

@@ -60,39 +60,32 @@ class Simulator:
         self.memory = []
 
     def step(self):
-        # Update velocities: v(t+dt) = v(t) + a(t)*dt / 2 to make the leapfrog integrator time-symmetric
-        self.velocities += self.acc * self.dt / 2.0
+        # Half-step velocity update: v(t+dt/2) = v(t) + a(t) * dt / 2
+        self.velocities += self.acc * (self.dt / 2.0)
 
-        # Update positions: r(t+dt) = r(t) + v(t)*dt
+        # Full-step position update: r(t+dt) = r(t) + v(t+dt/2) * dt
         self.positions += self.velocities * self.dt
 
         # Update accelerations based on the new positions
-        self.accelerations()  # Recompute accelerations with new positions
+        self.accelerations()  # Recompute accelerations with updated positions
 
+        # Full-step velocity update: v(t+dt) = v(t+dt/2) + a(t+dt) * dt / 2
+        self.velocities += self.acc * (self.dt / 2.0)
+
+        # Store memory (optional energy calculation)
         if self.calc_energy:
             U, K = self.energy()
             self.memory[-1]['U'] = U    
             self.memory[-1]['K'] = K
 
-            self.memory.append({
-                'positions': self.positions.clone(),
-                'velocities': self.velocities.clone(),
-                'accelerations': self.acc.clone(),
-            })
-
-        else:
-            self.memory.append({
-                'positions': self.positions.clone(),
-                'velocities': self.velocities.clone(),
-                'accelerations': self.acc.clone()
-            })
-
-        # Update velocities: v(t+dt) = v(t) + a(t)*dt / 2 to complete the leapfrog step
-        self.velocities += self.acc * self.dt / 2.0
-
+        self.memory.append({
+            'positions': self.positions.clone(),
+            'velocities': self.velocities.clone(),
+            'accelerations': self.acc.clone()
+        })
 
     def run(self, steps):
-
+        # Compute initial accelerations before stepping
         self.accelerations()
 
         self.memory.append({

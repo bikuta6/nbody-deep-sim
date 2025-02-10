@@ -14,7 +14,7 @@ def transform_to_graph(positions, features, y, radius=0.5, edge_attr=False, devi
 
     for i in range(positions.size(0)):
         pos = positions[i]
-        edge_index = radius_graph(pos, r=radius, batch=None, loop=False)
+        edge_index = radius_graph(pos, r=radius, batch=None, loop=False, max_num_neighbors=100)
         data = Data(pos=pos, edge_index=edge_index, x=torch.cat((pos, features[i]), dim=-1), y=y[i])
         batch_idx = torch.full((pos.size(0),), i, dtype=torch.long, device=device)
         data.batch = batch_idx
@@ -48,7 +48,7 @@ class GraphModel(torch.nn.Module):
             self.node_encoder = torch.nn.Identity()
 
         if edge_encoder_dims:
-            self.edge_encoder = MLP([1] + edge_encoder_dims + [gnn_dim], norm=None, act='ReLU', device=device, dropout=encoder_dropout)
+            self.edge_encoder = MLP([1] + edge_encoder_dims, norm=None, act='ReLU', device=device, dropout=encoder_dropout)
         else:
             self.edge_encoder = torch.nn.Identity()
 
@@ -65,7 +65,7 @@ class GraphModel(torch.nn.Module):
                                         norm='layer',
                                         bias=True,
                                         eps=1e-7,
-                                        edge_dim=gnn_dim if edge_encoder_dims else None))
+                                        edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
             else:
                 self.gnns.append(GENConv(in_channels=gnn_dim, 
                                         out_channels=gnn_dim, 
@@ -74,7 +74,7 @@ class GraphModel(torch.nn.Module):
                                         norm='layer',
                                         bias=True,
                                         eps=1e-7,
-                                        edge_dim=gnn_dim if edge_encoder_dims else None))
+                                        edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
                 
         for gnn in self.gnns:
             gnn.to(device)
@@ -161,14 +161,33 @@ class GraphModel(torch.nn.Module):
         return U, K
     
     def energy_loss(self, U, K, pred_acc, masses, initial_positions, initial_velocities):
+        """
+        Computes the energy loss between the predicted and stored energy values using leapfrog integration.
+        
+        Arguments:
+        - U, K: Stored potential and kinetic energy from memory
+        - pred_acc: Acceleration at the current timestep
+        - masses: Particle masses
+        - initial_positions: Positions from memory before integration step
+        - initial_velocities: Velocities from memory before integration step
+        
+        Returns:
+        - Energy loss based on MSE
+        """
 
-        # Compute the predicted velocities
-        pred_velocities = initial_velocities + pred_acc * self.dt
+        # Half-step velocity update
+        pred_velocities_half = initial_velocities + (pred_acc * self.dt / 2.0)
 
-        # Compute the predicted positions
-        pred_positions = initial_positions + pred_velocities * self.dt
+        # Full-step position update
+        pred_positions = initial_positions + pred_velocities_half * self.dt
 
-        # Compute the predicted energy
+        # Compute new acceleration (should be done outside this function in a real simulation)
+        # pred_acc_new = self.compute_acceleration(pred_positions, masses)  
+
+        # Full-step velocity update
+        pred_velocities = pred_velocities_half + (pred_acc * self.dt / 2.0)
+
+        # Compute the predicted energy based on the new state
         pred_U, pred_K = self.energy(pred_positions, pred_velocities, masses)
 
         # Compute the energy loss
@@ -183,46 +202,66 @@ class GraphModel(torch.nn.Module):
 
         num_graphs = data.num_graphs
 
+
         mse_losses = 0
 
-        for i in range(num_graphs):
-            idx = data.batch == i
-            y = data.y[idx]
-            acc = acc_pred[idx]
-            pos = data.x[idx][:, :3]
-            mass = data.x[idx][:, 3]
-            vel = data.x[idx][:, 4:7]
+        if neighbor_weigth == 0 and energy_weigth == 0:
 
-            acc_loss = torch.nn.functional.mse_loss(acc, y)
-            mse_losses += acc_loss
-            loss = acc_weigth * acc_loss
+            acc_loss = torch.nn.functional.mse_loss(acc_pred, data.y)
+            mse_losses = acc_loss
 
             if force_weigth > 0:
-                # mass is of shape (N, 1) and acc is of shape (N, 3)
-                # F = ma
-                force_pred = mass.reshape(-1, 1) * acc
-                force_true = mass.reshape(-1, 1) * y
+                force_pred = data.x[:, 3].reshape(-1, 1) * acc_pred
+                force_true = data.x[:, 3].reshape(-1, 1) * data.y
                 force_loss = torch.nn.functional.mse_loss(force_pred, force_true)
-                loss += force_weigth * force_loss
-
-            if neighbor_weigth > 0:
-                # edge_indexes for this graph idx is the id of the nodes in the graph
-
-                edges = data.edge_index[:, data.batch[data.edge_index[0]] == i]
-
-                neighbor_loss = self.compute_neighbor_loss(acc, edges)
-                loss += neighbor_weigth * neighbor_loss
-
-            if energy_weigth > 0:
-                energy_loss = self.energy_loss(data.U[i], data.K[i], acc, mass, pos, vel)
-                loss += energy_weigth * energy_loss
-
-            if i == 0:
-                total_loss = loss
+                loss = acc_weigth * acc_loss + force_weigth * force_loss
             else:
-                total_loss += loss
+                loss = acc_weigth * acc_loss
 
-        return total_loss / num_graphs, mse_losses / num_graphs
+            return loss, mse_losses
+
+
+        else:
+
+            for i in range(num_graphs):
+                idx = data.batch == i
+                y = data.y[idx]
+                acc = acc_pred[idx]
+                feats = data.x[idx]
+                pos = feats[:, :3]
+                mass = feats[:, 3]
+                vel = feats[:, 4:7]
+
+                acc_loss = torch.nn.functional.mse_loss(acc, y)
+                mse_losses += acc_loss
+                loss = acc_weigth * acc_loss
+
+                if force_weigth > 0:
+                    # mass is of shape (N, 1) and acc is of shape (N, 3)
+                    # F = ma
+                    force_pred = mass.reshape(-1, 1) * acc
+                    force_true = mass.reshape(-1, 1) * y
+                    force_loss = torch.nn.functional.mse_loss(force_pred, force_true)
+                    loss += force_weigth * force_loss
+
+                if neighbor_weigth > 0:
+                    # edge_indexes for this graph idx is the id of the nodes in the graph
+
+                    edges = data.edge_index[:, data.batch[data.edge_index[0]] == i]
+
+                    neighbor_loss = self.compute_neighbor_loss(acc, edges)
+                    loss += neighbor_weigth * neighbor_loss
+
+                if energy_weigth > 0:
+                    energy_loss = self.energy_loss(data.U[i], data.K[i], acc, mass, pos, vel)
+                    loss += energy_weigth * energy_loss
+
+                if i == 0:
+                    total_loss = loss
+                else:
+                    total_loss += loss
+
+            return total_loss / num_graphs, mse_losses / num_graphs
     
     def train_batch(self, optimizer, pos, feat, acc, U=None, K=None, edge_attr=False, acc_weigth=1.0, force_weigth=1.0, neighbor_weigth=1.0, energy_weigth=1.0):
         self.train()
