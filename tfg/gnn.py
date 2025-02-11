@@ -1,6 +1,6 @@
 import torch
 from torch_geometric.nn import MLP
-from torch_geometric.nn import GENConv, radius_graph
+from torch_geometric.nn import GENConv, radius_graph, GravNetConv
 from torch_geometric.data import Data, Batch
 from torch.nn import Sequential, Linear, ReLU
 
@@ -271,3 +271,12 @@ class GraphModel(torch.nn.Module):
         loss.backward()
         optimizer.step()
         return loss.item(), mse_loss.item()
+    
+    def predict(self, pos, feat, edge_attr=False):
+        self.eval()
+        data = transform_to_graph(pos, feat, torch.zeros((pos.size(0), 3), device=self.device), edge_attr=edge_attr, device=self.device, radius=self.radius)
+        return self.forward(data)
+    
+
+
+

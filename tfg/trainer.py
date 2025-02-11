@@ -44,11 +44,20 @@ class Trainer:
 
         return train_losses, train_mse_losses
     
-    def train(self, runs, type='disk', num_scenes=10, batch_size=64, epochs=4, previous_pos=2, save_every=10):
+    def train(self, runs, type='disk', num_scenes=10, batch_size=64, epochs=4, previous_pos=2, save_every=10, model_path=None):
         # create a folder for saving
         if save_every > 0:
-            path = './models' + datetime.now().strftime("%Y%m%d%H%M%S")
-            os.mkdir(path)
+            if model_path:
+                path = model_path
+            else:
+                path = './models' + datetime.now().strftime("%Y%m%d%H%M%S")
+                os.mkdir(path)
+
+        if model_path:
+            models = os.listdir(model_path)
+            models = sorted(models, key=lambda x: int(x.split('_')[1].split('.')[0]))
+            self.model.load_state_dict(torch.load(f'{model_path}/{models[-1]}'))
+            print(f"Loaded model {models[-1]}")
 
         runs_range = tqdm.trange(runs)
         for i in runs_range:
