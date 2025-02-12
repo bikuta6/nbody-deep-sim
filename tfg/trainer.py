@@ -56,7 +56,7 @@ class Trainer:
         if model_path:
             models = os.listdir(model_path)
             models = sorted(models, key=lambda x: int(x.split('_')[1].split('.')[0]))
-            self.model.load_state_dict(torch.load(f'{model_path}/{models[-1]}'))
+            self.model.load_state_dict(torch.load(f'{model_path}/{models[-1]}', weights_only=True))
             print(f"Loaded model {models[-1]}")
 
         runs_range = tqdm.trange(runs)
