@@ -52,19 +52,21 @@ class Trainer:
             else:
                 path = './models' + datetime.now().strftime("%Y%m%d%H%M%S")
                 os.mkdir(path)
-
+        last_model = 0
         if model_path:
             models = os.listdir(model_path)
             models = sorted(models, key=lambda x: int(x.split('_')[1].split('.')[0]))
             self.model.load_state_dict(torch.load(f'{model_path}/{models[-1]}', weights_only=True))
             print(f"Loaded model {models[-1]}")
+            last_model = int(models[-1].split('_')[1].split('.')[0])
 
         runs_range = tqdm.trange(runs)
         for i in runs_range:
             train_losses, train_mse_losses = self.train_once(type=type, num_scenes=num_scenes, batch_size=batch_size, epochs=epochs, previous_pos=previous_pos)
             runs_range.set_postfix_str(f"Run {i+1}: Loss: {train_losses[-1]}, MSE Loss: {train_mse_losses[-1]}")
             if i % save_every == 0:
-                torch.save(self.model.state_dict(), f'{path}/model_{i}.pt')
+
+                torch.save(self.model.state_dict(), f'{path}/model_{i+last_model}.pt')
         if save_every > 0:
             torch.save(self.model.state_dict(), f'{path}/model_final.pt')
 

@@ -2,7 +2,7 @@ import torch
 from torch_geometric.nn import MLP
 from torch_geometric.nn import GENConv, radius_graph, GravNetConv
 from torch_geometric.data import Data, Batch
-from torch.nn import Sequential, Linear, ReLU
+from torch.nn import Sequential, Linear, ReLU, Tanh, ModuleList
 
 
 
@@ -24,6 +24,9 @@ def transform_to_graph(positions, features, y, radius=0.5, edge_attr=False, devi
 
         if edge_attr:
             attr = (pos[edge_index[0]] - pos[edge_index[1]]).norm(dim=-1).unsqueeze(-1)
+            masses = data.x[:, 3].reshape(-1, 1)
+            mass_mul = masses[edge_index[0]] * masses[edge_index[1]]
+            attr = torch.cat((attr, mass_mul), dim=-1)
             data.edge_attr = attr
 
         batch.append(data)
@@ -32,8 +35,12 @@ def transform_to_graph(positions, features, y, radius=0.5, edge_attr=False, devi
 
 
 class GraphModel(torch.nn.Module):
-    def __init__(self, input_dim=1, output_hiddens=None, output_dim=3, node_encoder_dims=None, edge_encoder_dims=None, gnn_dim=128, encoder_dropout=0.0, message_passing_steps=4, aggr='sum', device='cpu', G=1.0, softening=0.1, dt=0.01, radius=0.5):
+    def __init__(self, input_dim=1, output_hiddens=None, output_dim=3, node_encoder_dims=None, 
+                 edge_encoder_dims=None, gnn_dim=128, encoder_dropout=0.0, message_passing_steps=4, 
+                 aggr='sum', device='cpu', G=1.0, softening=0.1, dt=0.01, radius=0.5):
         super(GraphModel, self).__init__()
+        
+        # Store parameters
         self.device = device
         self.G = G
         self.softening = softening
@@ -41,71 +48,103 @@ class GraphModel(torch.nn.Module):
         self.radius = radius
         self.node_encoder_dims = node_encoder_dims
         self.edge_encoder_dims = edge_encoder_dims
+        self.message_passing_steps = message_passing_steps
+        self.aggr = aggr
+        self.output_hiddens = output_hiddens
+        self.output_dim = output_dim
+        self.input_dim = input_dim
+        self.gnn_dim = gnn_dim
+        self.encoder_dropout = encoder_dropout
 
+        # Initialize node encoder
         if node_encoder_dims:
-            self.node_encoder = MLP([input_dim] +  node_encoder_dims + [gnn_dim], norm=None, act='ReLU', device=device, dropout=encoder_dropout)
+            self.node_encoder = MLP([input_dim] + node_encoder_dims + [gnn_dim], 
+                                    norm=None, act='tanh', device=device, dropout=encoder_dropout)
         else:
             self.node_encoder = torch.nn.Identity()
 
+        # Initialize edge encoder
         if edge_encoder_dims:
-            self.edge_encoder = MLP([1] + edge_encoder_dims, norm=None, act='ReLU', device=device, dropout=encoder_dropout)
+            self.edge_encoder = MLP([2] + edge_encoder_dims, 
+                                    norm=None, act='tanh', device=device, dropout=encoder_dropout)
         else:
             self.edge_encoder = torch.nn.Identity()
 
+        # Move encoders to device
         self.edge_encoder = self.edge_encoder.to(device)
         self.node_encoder = self.node_encoder.to(device)
 
-        self.gnns = []
+        # Initialize GNN layers using ModuleList
+        self.gnns = ModuleList()
         for i in range(message_passing_steps):
             if i == 0 and node_encoder_dims is None:
                 self.gnns.append(GENConv(in_channels=input_dim, 
-                                        out_channels=gnn_dim, 
-                                        aggr=aggr,
-                                        num_layers=1,
-                                        norm='layer',
-                                        bias=True,
-                                        eps=1e-7,
-                                        edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
+                                         out_channels=gnn_dim, 
+                                         aggr=aggr,
+                                         num_layers=2,
+                                         norm='layer',
+                                         bias=True,
+                                         eps=1e-7,
+                                         edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
             else:
                 self.gnns.append(GENConv(in_channels=gnn_dim, 
-                                        out_channels=gnn_dim, 
-                                        aggr=aggr,
-                                        num_layers=1,
-                                        norm='layer',
-                                        bias=True,
-                                        eps=1e-7,
-                                        edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
-                
-        for gnn in self.gnns:
-            gnn.to(device)
-                
+                                         out_channels=gnn_dim, 
+                                         aggr=aggr,
+                                         num_layers=2,
+                                         norm='layer',
+                                         bias=True,
+                                         eps=1e-7,
+                                         edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
+
+        # Move GNN layers to device
+        self.gnns.to(device)
+
+
+        # Initialize output layers
         if output_hiddens:
             layers = []
-            dims = [gnn_dim] + output_hiddens + [output_dim]
+            dims = [gnn_dim*2] + output_hiddens + [output_dim]
             for i in range(len(dims) - 1):
                 layers.append(Linear(dims[i], dims[i+1]))
                 if i < len(dims) - 2:
-                    layers.append(ReLU())
+                    layers.append(Tanh())
             self.output = Sequential(*layers).to(device)
         else:
             self.output = Linear(gnn_dim, output_dim).to(device)
 
+    def get_config(self):
+        return {
+            'input_dim': self.input_dim,
+            'output_hiddens': self.output_hiddens,
+            'output_dim': self.output_dim,
+            'node_encoder_dims': self.node_encoder_dims,
+            'edge_encoder_dims': self.edge_encoder_dims,
+            'gnn_dim': self.gnn_dim,
+            'encoder_dropout': self.encoder_dropout,
+            'message_passing_steps': self.message_passing_steps,
+            'aggr': self.aggr,
+            'device': self.device,
+            'G': self.G,
+            'softening': self.softening,
+            'dt': self.dt,
+            'radius': self.radius
+        }
+
     def forward(self, data):
-        x = data.x
+        x = self.node_encoder(data.x)  # Always apply node encoding (Identity() if unused)
         edge_index = data.edge_index
-        if self.edge_encoder_dims:
-            edge_attr = self.edge_encoder(data.edge_attr)
-        if self.node_encoder_dims:
-            x = self.node_encoder(x)
+        edge_attr = self.edge_encoder(data.edge_attr) if self.edge_encoder_dims else None
+
+        encoder_output = x  # Store encoded node features
 
         for gnn in self.gnns:
-            if self.edge_encoder_dims:
-                x = gnn(x, edge_index, edge_attr)
-            else:
-                x = gnn(x, edge_index)
+            x = gnn(x, edge_index, edge_attr) if edge_attr is not None else gnn(x, edge_index)
+
+        # Concatenate encoded input and GNN output if needed
+        x = torch.cat((encoder_output, x), dim=-1) if self.output_hiddens else x
 
         return self.output(x)
-    
+        
     def compute_neighbor_loss(self, acc, edges):
         """
         Computes the MSE loss between each node and the average predicted acceleration of its neighbors.
@@ -191,28 +230,29 @@ class GraphModel(torch.nn.Module):
         pred_U, pred_K = self.energy(pred_positions, pred_velocities, masses)
 
         # Compute the energy loss
-        energy_loss = torch.nn.functional.mse_loss(pred_U + pred_K, U + K)
+        U_loss = torch.nn.functional.mse_loss(pred_U, U)
+        K_loss = torch.nn.functional.mse_loss(pred_K, K)
+
+        energy_loss = U_loss + K_loss
 
         return energy_loss
 
 
     def compute_loss(self, data, acc_weigth=1.0, force_weigth=1.0, neighbor_weigth=1.0, energy_weigth=1.0):
-        
         acc_pred = self.forward(data)
-
         num_graphs = data.num_graphs
 
-
-        mse_losses = 0
+        mse_losses = torch.tensor(0.0, device=data.y.device, dtype=data.y.dtype)
+        total_loss = torch.tensor(0.0, device=data.y.device, dtype=data.y.dtype)
 
         if neighbor_weigth == 0 and energy_weigth == 0:
-
             acc_loss = torch.nn.functional.mse_loss(acc_pred, data.y)
             mse_losses = acc_loss
 
             if force_weigth > 0:
-                force_pred = data.x[:, 3].reshape(-1, 1) * acc_pred
-                force_true = data.x[:, 3].reshape(-1, 1) * data.y
+                mass = data.x[:, 3].reshape(-1, 1)
+                force_pred = mass * acc_pred
+                force_true = mass * data.y
                 force_loss = torch.nn.functional.mse_loss(force_pred, force_true)
                 loss = acc_weigth * acc_loss + force_weigth * force_loss
             else:
@@ -220,48 +260,37 @@ class GraphModel(torch.nn.Module):
 
             return loss, mse_losses
 
+        for i in range(num_graphs):
+            idx = data.batch == i
+            y = data.y[idx]
+            acc = acc_pred[idx]
+            feats = data.x[idx]
+            pos = feats[:, :3]
+            mass = feats[:, 3].reshape(-1, 1)
+            vel = feats[:, 4:7]
 
-        else:
+            acc_loss = torch.nn.functional.mse_loss(acc, y)
+            mse_losses += acc_loss
+            loss = acc_weigth * acc_loss
 
-            for i in range(num_graphs):
-                idx = data.batch == i
-                y = data.y[idx]
-                acc = acc_pred[idx]
-                feats = data.x[idx]
-                pos = feats[:, :3]
-                mass = feats[:, 3]
-                vel = feats[:, 4:7]
+            if force_weigth > 0:
+                force_pred = mass * acc
+                force_true = mass * y
+                force_loss = torch.nn.functional.mse_loss(force_pred, force_true)
+                loss += force_weigth * force_loss
 
-                acc_loss = torch.nn.functional.mse_loss(acc, y)
-                mse_losses += acc_loss
-                loss = acc_weigth * acc_loss
+            if neighbor_weigth > 0:
+                edges = data.edge_index[:, data.batch[data.edge_index[0]] == i]
+                neighbor_loss = self.compute_neighbor_loss(acc, edges)
+                loss += neighbor_weigth * neighbor_loss
 
-                if force_weigth > 0:
-                    # mass is of shape (N, 1) and acc is of shape (N, 3)
-                    # F = ma
-                    force_pred = mass.reshape(-1, 1) * acc
-                    force_true = mass.reshape(-1, 1) * y
-                    force_loss = torch.nn.functional.mse_loss(force_pred, force_true)
-                    loss += force_weigth * force_loss
+            if energy_weigth > 0:
+                energy_loss = self.energy_loss(data.U[i], data.K[i], acc, mass, pos, vel)
+                loss += energy_weigth * energy_loss
 
-                if neighbor_weigth > 0:
-                    # edge_indexes for this graph idx is the id of the nodes in the graph
+            total_loss += loss
 
-                    edges = data.edge_index[:, data.batch[data.edge_index[0]] == i]
-
-                    neighbor_loss = self.compute_neighbor_loss(acc, edges)
-                    loss += neighbor_weigth * neighbor_loss
-
-                if energy_weigth > 0:
-                    energy_loss = self.energy_loss(data.U[i], data.K[i], acc, mass, pos, vel)
-                    loss += energy_weigth * energy_loss
-
-                if i == 0:
-                    total_loss = loss
-                else:
-                    total_loss += loss
-
-            return total_loss / num_graphs, mse_losses / num_graphs
+        return total_loss / num_graphs, mse_losses / num_graphs
     
     def train_batch(self, optimizer, pos, feat, acc, U=None, K=None, edge_attr=False, acc_weigth=1.0, force_weigth=1.0, neighbor_weigth=1.0, energy_weigth=1.0):
         self.train()
@@ -276,6 +305,9 @@ class GraphModel(torch.nn.Module):
         self.eval()
         data = transform_to_graph(pos, feat, torch.zeros((pos.size(0), 3), device=self.device), edge_attr=edge_attr, device=self.device, radius=self.radius)
         return self.forward(data)
+    
+
+
     
 
 
