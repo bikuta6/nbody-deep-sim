@@ -1,8 +1,8 @@
 import torch
 from torch_geometric.nn import MLP
-from torch_geometric.nn import GENConv, radius_graph, GravNetConv
+from torch_geometric.nn import GENConv, radius_graph, EdgeConv
 from torch_geometric.data import Data, Batch
-from torch.nn import Sequential, Linear, ReLU, Tanh, ModuleList
+from torch.nn import Sequential, Linear, ReLU, Tanh, ModuleList, LayerNorm
 
 
 
@@ -36,7 +36,7 @@ def transform_to_graph(positions, features, y, radius=0.5, edge_attr=False, devi
 
 class GraphModel(torch.nn.Module):
     def __init__(self, input_dim=1, output_hiddens=None, output_dim=3, node_encoder_dims=None, 
-                 edge_encoder_dims=None, gnn_dim=128, encoder_dropout=0.0, message_passing_steps=4, 
+                 edge_encoder_dims=None, gnn_type='EdgeConv', gnn_dim=128, encoder_dropout=0.0, message_passing_steps=4, 
                  aggr='sum', device='cpu', G=1.0, softening=0.1, dt=0.01, radius=0.5):
         super(GraphModel, self).__init__()
         
@@ -55,18 +55,18 @@ class GraphModel(torch.nn.Module):
         self.input_dim = input_dim
         self.gnn_dim = gnn_dim
         self.encoder_dropout = encoder_dropout
+        self.gnn_type = gnn_type
+        assert gnn_type in ['GENConv', 'EdgeConv'], 'Invalid GNN type, choose from "GENConv" or "EdgeConv".'
 
         # Initialize node encoder
         if node_encoder_dims:
-            self.node_encoder = MLP([input_dim] + node_encoder_dims + [gnn_dim], 
-                                    norm=None, act='tanh', device=device, dropout=encoder_dropout)
+            self.node_encoder = MLP([input_dim] + node_encoder_dims + [gnn_dim], act='tanh', device=device, dropout=encoder_dropout)
         else:
             self.node_encoder = torch.nn.Identity()
 
         # Initialize edge encoder
         if edge_encoder_dims:
-            self.edge_encoder = MLP([2] + edge_encoder_dims, 
-                                    norm=None, act='tanh', device=device, dropout=encoder_dropout)
+            self.edge_encoder = MLP([2] + edge_encoder_dims, act='tanh', device=device, dropout=encoder_dropout)
         else:
             self.edge_encoder = torch.nn.Identity()
 
@@ -78,25 +78,39 @@ class GraphModel(torch.nn.Module):
         self.gnns = ModuleList()
         for i in range(message_passing_steps):
             if i == 0 and node_encoder_dims is None:
-                self.gnns.append(GENConv(in_channels=input_dim, 
+                if self.gnn_type == 'EdgeConv':
+                    self.gnns.append(EdgeConv( nn= Sequential(Linear(input_dim*2, gnn_dim), Tanh(), Linear(gnn_dim, gnn_dim)),
+                                               aggr=aggr,
+                                               ))
+                else:
+                    self.gnns.append(GENConv(in_channels=input_dim, 
                                          out_channels=gnn_dim, 
                                          aggr=aggr,
                                          num_layers=2,
-                                         norm='layer',
+                                         norm='batch',
                                          bias=True,
                                          eps=1e-7,
                                          edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
             else:
-                self.gnns.append(GENConv(in_channels=gnn_dim, 
+                if self.gnn_type == 'EdgeConv':
+                    self.gnns.append(EdgeConv( nn= Sequential(Linear(gnn_dim*2, gnn_dim), Tanh(), Linear(gnn_dim, gnn_dim)),
+                                               aggr=aggr,
+                                               ))
+                else:
+                    self.gnns.append(GENConv(in_channels=gnn_dim, 
                                          out_channels=gnn_dim, 
                                          aggr=aggr,
                                          num_layers=2,
-                                         norm='layer',
+                                         norm='batch',
                                          bias=True,
                                          eps=1e-7,
                                          edge_dim=edge_encoder_dims[-1] if edge_encoder_dims else None))
 
         # Move GNN layers to device
+        if self.gnn_type == 'GENConv':
+            for i in range(len(self.gnns)):
+                self.gnns[i].mlp[2] = Tanh()
+
         self.gnns.to(device)
 
 
@@ -114,6 +128,7 @@ class GraphModel(torch.nn.Module):
 
     def get_config(self):
         return {
+            'gnn_type': self.gnn_type,
             'input_dim': self.input_dim,
             'output_hiddens': self.output_hiddens,
             'output_dim': self.output_dim,
@@ -246,7 +261,7 @@ class GraphModel(torch.nn.Module):
         total_loss = torch.tensor(0.0, device=data.y.device, dtype=data.y.dtype)
 
         if neighbor_weigth == 0 and energy_weigth == 0:
-            acc_loss = torch.nn.functional.mse_loss(acc_pred, data.y)
+            acc_loss = torch.norm(acc_pred - data.y, dim=1).mean()
             mse_losses = acc_loss
 
             if force_weigth > 0:
@@ -258,7 +273,9 @@ class GraphModel(torch.nn.Module):
             else:
                 loss = acc_weigth * acc_loss
 
+
             return loss, mse_losses
+        
 
         for i in range(num_graphs):
             idx = data.batch == i
@@ -269,7 +286,7 @@ class GraphModel(torch.nn.Module):
             mass = feats[:, 3].reshape(-1, 1)
             vel = feats[:, 4:7]
 
-            acc_loss = torch.nn.functional.mse_loss(acc, y)
+            acc_loss = torch.norm(acc - y, dim=1).mean()
             mse_losses += acc_loss
             loss = acc_weigth * acc_loss
 
@@ -309,6 +326,5 @@ class GraphModel(torch.nn.Module):
 
 
     
-
 
 

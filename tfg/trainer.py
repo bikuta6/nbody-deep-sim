@@ -63,7 +63,7 @@ class Trainer:
         runs_range = tqdm.trange(runs)
         for i in runs_range:
             train_losses, train_mse_losses = self.train_once(type=type, num_scenes=num_scenes, batch_size=batch_size, epochs=epochs, previous_pos=previous_pos)
-            runs_range.set_postfix_str(f"Run {i+1}: Loss: {train_losses[-1]}, MSE Loss: {train_mse_losses[-1]}")
+            runs_range.set_postfix_str(f"Run {i+1}: Loss: {train_losses[-1]}, Euclidean Distance: {train_mse_losses[-1]}")
             if i % save_every == 0:
 
                 torch.save(self.model.state_dict(), f'{path}/model_{i+last_model}.pt')
