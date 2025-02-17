@@ -113,6 +113,8 @@ class GraphModel(torch.nn.Module):
 
         self.gnns.to(device)
 
+        self.layer_norm = LayerNorm(gnn_dim*2).to(device)
+
 
         # Initialize output layers
         if output_hiddens:
@@ -124,7 +126,7 @@ class GraphModel(torch.nn.Module):
                     layers.append(Tanh())
             self.output = Sequential(*layers).to(device)
         else:
-            self.output = Linear(gnn_dim, output_dim).to(device)
+            self.output = Linear(gnn_dim*2, output_dim).to(device)
 
     def get_config(self):
         return {
@@ -156,7 +158,9 @@ class GraphModel(torch.nn.Module):
             x = gnn(x, edge_index, edge_attr) if edge_attr is not None else gnn(x, edge_index)
 
         # Concatenate encoded input and GNN output if needed
-        x = torch.cat((encoder_output, x), dim=-1) if self.output_hiddens else x
+        x = torch.cat((encoder_output, x), dim=-1)
+
+        x = self.layer_norm(x)
 
         return self.output(x)
         
