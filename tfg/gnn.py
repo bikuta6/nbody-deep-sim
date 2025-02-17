@@ -33,6 +33,69 @@ def transform_to_graph(positions, features, y, radius=0.5, edge_attr=False, devi
 
     return Batch.from_data_list(batch).to(device)
 
+def transform_to_graph_grid(positions, features, y, radius=1, edge_attr=False, device='cuda', U=None, K=None, grid_size=3, space_dim=(-2, 2)):
+    batch = []
+    if positions.dim() == 2:
+        positions = positions.unsqueeze(0)
+    
+    grid_min, grid_max = space_dim
+    grid_step = (grid_max - grid_min) / (grid_size - 1) + 1e-6
+    
+    for i in range(positions.size(0)):
+        print(positions[i].shape)
+        pos = positions[i]
+        edge_index = radius_graph(pos, r=radius, batch=None, loop=False, max_num_neighbors=100)
+        x_feats = torch.cat((pos, features[i]), dim=-1)
+        data = Data(pos=pos, edge_index=edge_index, x=x_feats, y=y[i])
+        batch_idx = torch.full((pos.size(0),), i, dtype=torch.long, device=device)
+        data.batch = batch_idx
+        
+        if U is not None:
+            data.U = U[i]
+            data.K = K[i]
+
+        if edge_attr:
+            attr = (pos[edge_index[0]] - pos[edge_index[1]]).norm(dim=-1).unsqueeze(-1)
+            masses = data.x[:, 3].reshape(-1, 1)
+            mass_mul = masses[edge_index[0]] * masses[edge_index[1]]
+            attr = torch.cat((attr, mass_mul), dim=-1)
+            data.edge_attr = attr
+        
+        # Create regular grid nodes
+        grid_coords = torch.meshgrid(
+            torch.linspace(grid_min, grid_max, grid_size),
+            torch.linspace(grid_min, grid_max, grid_size),
+            torch.linspace(grid_min, grid_max, grid_size),
+            indexing='ij'
+        )
+        grid_pos = torch.stack([grid_coords[0].flatten(), grid_coords[1].flatten(), grid_coords[2].flatten()], dim=-1).to(device)
+        
+        grid_features = torch.zeros((grid_pos.shape[0], x_feats.shape[-1]), device=device)
+        
+        
+        # Connect particles to grid nodes
+        grid_edges = []
+        for idx, p in enumerate(pos):
+            distances = torch.norm(grid_pos - p, dim=-1)
+            closest_idx = torch.argmin(distances)
+            grid_edges.append([idx, closest_idx])
+            grid_features[closest_idx] += x_feats[idx]
+        grid_edges = torch.tensor(grid_edges, dtype=torch.long).T.to(device)
+        print(grid_edges.shape)
+        
+        # Connect neighboring grid nodes
+        grid_neighbors = radius_graph(grid_pos, r=grid_step, loop=False)
+        
+        # Store grid-related attributes separately
+        data.grid_pos = grid_pos
+        data.grid_x = grid_features
+        data.grid_edges = grid_edges
+        data.grid_neighbors = grid_neighbors
+        
+        batch.append(data)
+    
+    return Batch.from_data_list(batch).to(device)
+
 
 class GraphModel(torch.nn.Module):
     def __init__(self, input_dim=1, output_hiddens=None, output_dim=3, node_encoder_dims=None, 
@@ -329,6 +392,157 @@ class GraphModel(torch.nn.Module):
     
 
 
+class GraphModelGlobal(torch.nn.Module):
+    def __init__(self, input_dim=7, 
+                 global_input_dim=7,
+                 output_hiddens=None, 
+                 output_dim=3, 
+                 node_encoder_dims=None,
+                 gnn_dim=128, 
+                 encoder_dropout=0.0, 
+                 message_passing_steps=1,
+                 global_message_passing_steps=2,
+                 local_aggr='sum', 
+                 global_aggr='sum',
+                 device='cpu', 
+                 G=1.0, 
+                 softening=0.1, 
+                 dt=0.01, 
+                 radius=0.5):
+        super(GraphModelGlobal, self).__init__()
+
+        # Store parameters
+        self.device = device
+        self.G = G
+        self.softening = softening
+        self.dt = dt
+        self.radius = radius
+        self.node_encoder_dims = node_encoder_dims
+        self.message_passing_steps = message_passing_steps
+        self.global_message_passing_steps = global_message_passing_steps
+        self.local_aggr = local_aggr
+        self.global_aggr = global_aggr
+        self.output_hiddens = output_hiddens
+        self.output_dim = output_dim
+        self.input_dim = input_dim
+        self.global_input_dim = global_input_dim
+        self.gnn_dim = gnn_dim
+        self.encoder_dropout = encoder_dropout
+
+        # Initialize node encoder
+        if node_encoder_dims:
+            self.node_encoder = MLP([input_dim] + node_encoder_dims + [gnn_dim], act='tanh', device=device, dropout=encoder_dropout)
+        else:
+            self.node_encoder = torch.nn.Identity()
+
+        self.local_gnns = ModuleList()
+
+        for i in range(message_passing_steps):
+            self.local_gnns.append(EdgeConv( nn= Sequential(Linear(gnn_dim*2, gnn_dim), Tanh(), Linear(gnn_dim, gnn_dim)),
+                                               aggr=local_aggr,
+                                               ))
+            
+        self.global_gnns = ModuleList()
+
+        for i in range(global_message_passing_steps):
+            self.global_gnns.append(EdgeConv( nn= Sequential(Linear(gnn_dim*2, gnn_dim), Tanh(), Linear(gnn_dim, gnn_dim)),
+                                               aggr=global_aggr,
+                                               ))
+            
+        self.layer_norm = LayerNorm(gnn_dim*2).to(device)
+
+        # Initialize output layers
+        if output_hiddens:
+            layers = []
+            dims = [gnn_dim*2] + output_hiddens + [output_dim]
+            for i in range(len(dims) - 1):
+                layers.append(Linear(dims[i], dims[i+1]))
+                if i < len(dims) - 2:
+                    layers.append(Tanh())
+            self.output = Sequential(*layers).to(device)
+        else:
+            self.output = Linear(gnn_dim*2, output_dim).to(device)
+
+    def get_config(self):
+        return {
+            'input_dim': self.input_dim,
+            'global_input_dim': self.global_input_dim,
+            'output_hiddens': self.output_hiddens,
+            'output_dim': self.output_dim,
+            'node_encoder_dims': self.node_encoder_dims,
+            'gnn_dim': self.gnn_dim,
+            'encoder_dropout': self.encoder_dropout,
+            'message_passing_steps': self.message_passing_steps,
+            'global_message_passing_steps': self.global_message_passing_steps,
+            'local_aggr': self.local_aggr,
+            'global_aggr': self.global_aggr,
+            'device': self.device,
+            'G': self.G,
+            'softening': self.softening,
+            'dt': self.dt,
+            'radius': self.radius
+        }
     
+    def forward(self, data):
+
+        node_x = self.node_encoder(data.x)  # Always apply node encoding (Identity() if unused)
+        edge_index = data.edge_index
+
+        grid_x = data.grid_x
+        grid_neighbors = data.grid_neighbors
+        node_grid_correpondence = data.grid_edges
+
+        for gnn in self.local_gnns:
+            node_x = gnn(node_x, edge_index)
+
+        for gnn in self.global_gnns:
+            grid_x = gnn(grid_x, grid_neighbors)
+
+        # Concatenate node and grid features
+        x = torch.cat((node_x[node_grid_correpondence[0]], grid_x[node_grid_correpondence[1]]), dim=-1)
+
+        x = self.layer_norm(x)
+
+        return self.output(x)
+    
+    def compute_loss(self, data, acc_weigth=1.0, force_weigth=1.0, neighbor_weigth=1.0, energy_weigth=1.0):
+        acc_pred = self.forward(data)
+
+        acc = data.y
+
+        loss = torch.norm(acc_pred - acc, dim=1).mean()
+        mse_losses = loss
+
+        return loss, mse_losses
+        
+    
+    def train_batch(self, optimizer, pos, feat, acc, U=None, K=None, edge_attr=False, acc_weigth=1.0, force_weigth=1.0, neighbor_weigth=1.0, energy_weigth=1.0):
+        self.train()
+        optimizer.zero_grad()
+        N = pos.size(0)
+        loss = 0
+        mse_loss = 0
+        for i in range(N):
+            data = transform_to_graph_grid(pos[i], feat[i], acc[i], edge_attr=edge_attr, device=self.device, U=U[i], K=K[i], radius=self.radius)
+            loss, mse_loss = self.compute_loss(data, acc_weigth, force_weigth, neighbor_weigth, energy_weigth)
+            loss += loss
+            mse_loss += mse_loss
+
+        loss /= N
+        mse_loss /= N
+        loss.backward()
+        optimizer.step()
+
+        return loss.item(), mse_loss.item()
+    
+    def predict(self, pos, feat, edge_attr=False):
+        self.eval()
+        with torch.no_grad():
+            data = transform_to_graph_grid(pos, feat, torch.zeros((pos.size(0), 3), device=self.device), edge_attr=edge_attr, device=self.device, radius=self.radius)
+        return self.forward(data)
+    
+    
+        
+
 
 
