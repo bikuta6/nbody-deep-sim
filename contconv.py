@@ -1,5 +1,6 @@
 import torch
-from torch_geometric.nn import radius, scatter, MLP
+from torch_geometric.nn import radius, MLP
+from torch_scatter import scatter
 from torch import nn
 from torch_geometric.utils import add_self_loops
 from torch_geometric.data import Data
@@ -75,6 +76,8 @@ class ContinuousConvModel(nn.Module):
                  encoder_hiddens=None, encoder_dropout=0.0, decoder_hiddens=None, decoder_dropout=0.0, device='cpu'):
         super(ContinuousConvModel, self).__init__()
         self.device = device
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.encoder_hiddens = encoder_hiddens
         self.encoder_dropout = encoder_dropout
         self.decoder_hiddens = decoder_hiddens
@@ -82,6 +85,7 @@ class ContinuousConvModel(nn.Module):
         self.continuous_conv_layers = continuous_conv_layers
         self.continuous_conv_dim = continuous_conv_dim
         self.continuous_conv_dropout = continuous_conv_dropout
+        self.neighbors = 0
 
         if encoder_hiddens:
             self.node_encoder = MLP([in_channels] + encoder_hiddens + [continuous_conv_dim], act='tanh', device=device, dropout=encoder_dropout)
@@ -110,7 +114,7 @@ class ContinuousConvModel(nn.Module):
 
         self.contconv.to(device)
 
-        if self.node_encoder_dims is None:
+        if self.encoder_hiddens is None:
             out_dim = continuous_conv_dim + in_channels
         else:
             out_dim = continuous_conv_dim * 2
@@ -130,7 +134,7 @@ class ContinuousConvModel(nn.Module):
             self.output = nn.Linear(out_dim, out_channels).to(device)
         
     def forward(self, data):
-        if self.input_dim == 4:
+        if self.in_channels == 4:
             x = torch.cat((data.x[:, :3], data.x[:, 6:]), dim=-1)
         else:
             x = data.x

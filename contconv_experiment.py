@@ -1,7 +1,7 @@
 import os
 import subprocess
 import pandas as pd
-from gnn import GraphModel
+from contconv import ContinuousConvModel
 from trainer import Trainer
 from torch.optim import Adam
 import random
@@ -35,22 +35,25 @@ def generate_data(output_dir, num_files=10):
             
 
 # Generate train and test data
-generate_data("./data/train", num_files=10)
-generate_data("./data/test", num_files=1)
+#generate_data("./data/train", num_files=1)
+#generate_data("./data/test", num_files=1)
 
 print("Data generated.")
 
 # Initialize model and trainer
-model = GraphModel(
-    input_dim=4,  # 3 (pos) + 1 (mass) + 3 (vel) + 3 * previous positions
-    node_encoder_dims=[32, 64],
+model = ContinuousConvModel(
+    in_channels=4,
+    out_channels=3,
+    filter_resolution=[6, 4],
+    radius=1.0,
+    agg='mean',
+    self_loops=True,
+    continuous_conv_layers=2,
+    continuous_conv_dim=64,
+    encoder_hiddens=[32, 64],
     encoder_dropout=0.0,
-    gnn_dim=128,
-    message_passing_steps=2,
-    aggr='add',
-    output_hiddens=[64, 32],
-    device='cuda',
-    neighbors=25
+    decoder_hiddens=[64, 32],
+    device='cuda'
 )
 
 optimizer = Adam(model.parameters(), lr=0.001, weight_decay=0.0005)
@@ -62,7 +65,7 @@ print("Model and trainer initialized.")
 
 trainer.train_from_dir(
     epochs=100,
-    batch_size=64,
+    batch_size=8,
     save_every=10,
     data_path='./data/train',
     save_path='./contconv_weights'
