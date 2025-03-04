@@ -11,8 +11,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 # Set up directories
 os.makedirs("./data/train", exist_ok=True)
 os.makedirs("./data/test", exist_ok=True)
-os.makedirs("./model_weights", exist_ok=True)
-os.makedirs("./results/model", exist_ok=True)
+os.makedirs("./gnn_weights", exist_ok=True)
+os.makedirs("./results/gnn", exist_ok=True)
 
 print("Directories created.")
 # Generate data function
@@ -65,18 +65,18 @@ trainer.train_from_dir(
     batch_size=64,
     save_every=10,
     data_path='./data/train',
-    save_path='./model_weights'
+    save_path='./gnn_weights'
 )
 
 
 print("Training completed, evaluating model.")
 
 # Test model
-df_stepwise, df_rollout = trainer.test_from_dir(data_path='./data/test', stepwise=True, rollout=True, model_path='./model_weights')
+df_stepwise, df_rollout = trainer.test_from_dir(data_path='./data/test', stepwise=True, rollout=True, model_path='./gnn_weights')
 
 print("Evaluation completed.")
 # Save results to CSV
-df_stepwise.to_csv("./results/model/test_results_stepwise.csv", index=True)
-df_rollout.to_csv("./results/model/test_results_rollout.csv", index=True)
+df_stepwise.to_csv("./results/gnn/test_results_stepwise.csv", index=True)
+df_rollout.to_csv("./results/gnn/test_results_rollout.csv", index=True)
 
 print("Training and testing completed. Results saved.")
