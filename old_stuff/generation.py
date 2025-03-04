@@ -1,7 +1,7 @@
 import tqdm
 import torch
 import random
-from simulator import Simulator, generateDisk3Dv3
+from old_stuff.simulator import Simulator, generateDisk3Dv3
 from torch.utils.data import Dataset
 
 def gen_params(device="cpu"):
