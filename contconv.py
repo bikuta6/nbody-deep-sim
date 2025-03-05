@@ -42,9 +42,8 @@ class ContinuousConv(nn.Module):
         c0, c1 = c00 * (1 - yd) + c01 * yd, c10 * (1 - yd) + c11 * yd
         return c0 * (1 - xd) + c1 * xd
     
-    def forward(self, data):
-        positions, features = data.pos, data.x
-        batch = data.batch if hasattr(data, 'batch') else torch.zeros(positions.size(0), dtype=torch.long, device=positions.device)
+    def forward(self, positions, features, batch=None):
+        batch = batch if batch else torch.zeros(positions.size(0), dtype=torch.long, device=positions.device)
         
         edge_index = radius(positions, positions, self.radius, batch_x=batch, batch_y=batch, max_num_neighbors=10)
         if self.self_loops:
@@ -143,10 +142,10 @@ class ContinuousConvModel(nn.Module):
 
         encoder_output = x  # Store encoded node features
 
-        new_data = Data(x=x, pos=pos)
         for layer in self.contconv:
-            x = layer(new_data)
-            new_data.x = x
+            x = layer(pos, x, data.batch)
+            x = nn.Tanh()(x)
+            x = nn.Dropout(self.continuous_conv_dropout)(x)
 
         # Concatenate encoded input and GNN output if needed
         x = torch.cat((encoder_output, x), dim=-1)
