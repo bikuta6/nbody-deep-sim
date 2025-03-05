@@ -46,7 +46,7 @@ class ContinuousConv(nn.Module):
         positions, features = data.pos, data.x
         batch = data.batch if hasattr(data, 'batch') else torch.zeros(positions.size(0), dtype=torch.long, device=positions.device)
         
-        edge_index = radius(positions, positions, self.radius, batch_x=batch, batch_y=batch, max_num_neighbors=32)
+        edge_index = radius(positions, positions, self.radius, batch_x=batch, batch_y=batch, max_num_neighbors=10)
         if self.self_loops:
             edge_index, _ = add_self_loops(edge_index, num_nodes=positions.size(0))
 
