@@ -65,8 +65,35 @@ class ContinuousConv(nn.Module):
         
         output = scatter(conv_edge, row, dim=0, dim_size=positions.size(0), reduce=self.agg)
         return output
-    
 
+    '''
+    Maybe use grid_sample instead of trilinear interpolation?
+    
+    def grid_sample_trilinear(self, grid_coords):
+        # grid_coords: shape (E, 3) with coordinates in the original grid scale [0, D-1]
+        D = self.filter_resolution
+        E = grid_coords.shape[0]
+        # Convert to normalized coordinates in [-1, 1]
+        norm_coords = 2 * grid_coords / (D - 1) - 1  # shape (E, 3)
+        # Reshape to (E, 1, 1, 1, 3) as required by grid_sample for volumetric data:
+        norm_coords = norm_coords.view(E, 1, 1, 1, 3)
+        
+        # Rearrange filters:
+        # Original shape: (D, D, D, in_channels, out_channels)
+        # Permute to: (in_channels, out_channels, D, D, D)
+        filters_perm = self.filters.permute(3, 4, 0, 1, 2).contiguous()
+        # Merge in_channels and out_channels: (in_channels*out_channels, D, D, D)
+        filters_reshaped = filters_perm.view(1, self.in_channels * self.out_channels, D, D, D)
+        # Expand to have a batch dimension equal to the number of edges E.
+        filters_expanded = filters_reshaped.expand(E, -1, -1, -1, -1)
+        
+        # Use grid_sample with trilinear interpolation.
+        # For 5D inputs, mode should be 'trilinear' (and align_corners is important for correct normalization)
+        sampled = F.grid_sample(filters_expanded, norm_coords, mode='trilinear', align_corners=True)
+        # The result has shape (E, in_channels*out_channels, 1, 1, 1)
+        sampled = sampled.view(E, self.in_channels, self.out_channels)
+        return sampled  
+    '''
 
 class ContinuousConvModel(nn.Module):
 
