@@ -177,8 +177,7 @@ def generate_disk(
 
     return positions, velocities, masses
 
-# TODO Está sacado de una implementación de un generador de galaxias espirales que no funcionaba bien. Ahora sigue sin
-#   funcionar bien, pero al menos lo hace un poco mejor. No sé de dónde lo saqué, pero habría que revisarlo.
+
 def generate_spiral(
         *,
         n_bodies: int,
