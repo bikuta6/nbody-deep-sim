@@ -35,8 +35,10 @@ def generate_data(output_dir, num_files=10):
             
 
 # Generate train and test data
-generate_data("./data/train", num_files=10)
-generate_data("./data/test", num_files=1)
+if len(os.listdir("./data/train")) == 0:
+    generate_data("./data/train", num_files=10)
+if len(os.listdir("./data/test")) == 0:
+    generate_data("./data/test", num_files=1)
 
 print("Data generated.")
 
