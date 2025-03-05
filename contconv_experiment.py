@@ -66,13 +66,15 @@ print("Model and trainer initialized.")
 
 # Train model
 
-trainer.train_from_dir(
+epoch_loss, _ = trainer.train_from_dir(
     epochs=100,
     batch_size=8,
     save_every=10,
     data_path='./data/train',
     save_path='./contconv_weights'
 )
+
+pd.DataFrame(epoch_loss, columns=['loss']).to_csv("./results/contconv/train_loss.csv", index=False)
 
 
 print("Training completed, evaluating model.")

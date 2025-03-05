@@ -41,6 +41,8 @@ class Trainer:
 
         loaders = [get_dataloader(csv_path=f, batch_size=batch_size, k=self.model.neighbors) for f in csv_files]
         
+        epoch_losses = []
+        epoch_mse_losses = []
         for epoch in epochs_range:
             epoch_loss = []
             epoch_mse_loss = []
@@ -52,10 +54,15 @@ class Trainer:
                     epoch_mse_loss.append(mse_loss)
 
             epochs_range.set_postfix_str(f"Epoch {epoch+1}: Loss: {sum(epoch_loss) / len(epoch_loss)}, MSE: {sum(epoch_mse_loss) / len(epoch_mse_loss)}")
+            epoch_losses.append(sum(epoch_loss) / len(epoch_loss))
+            epoch_mse_losses.append(sum(epoch_mse_loss) / len(epoch_mse_loss))
             
             if save_path or create_save_path:
                 if (save_every > 0) and ((epoch+1) % save_every == 0):
                     torch.save(self.model.state_dict(), f'{path}/model_{epoch+1+last_model}.pt')
+                    print(f"Saved model {epoch+1+last_model}")
+
+        return epoch_losses, epoch_mse_losses
 
 
     def test_from_dir(self, data_path, model_path=None, sim_steps=1000, stepwise=True, rollout=True):
