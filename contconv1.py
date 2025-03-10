@@ -1,4 +1,3 @@
-'''
 import torch
 from torch_geometric.nn import radius, MLP
 from torch_scatter import scatter
@@ -6,34 +5,27 @@ from torch import nn
 from torch_geometric.utils import add_self_loops
 from torch_geometric.data import Data
 import time
-'''
 
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_scatter import scatter
-from torch_geometric.nn import radius_graph, MLP
-from torch_geometric.utils import add_self_loops
-from torch_geometric.data import Data
 
 class ContinuousConv(nn.Module):
-    def __init__(self, in_channels, out_channels, filter_resolution=4, radius=0.5, agg='mean'):
+    def __init__(self, in_channels, out_channels, filter_resolution=4, radius=0.5, agg='mean', self_loops=True):
         super().__init__()
-
-        self.in_channels, self.out_channels = in_channels, out_channels
-        self.radius, self.agg = radius, agg
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.radius = radius
         self.filter_resolution = filter_resolution
-        
         self.filters = nn.Parameter(torch.randn(filter_resolution, filter_resolution, filter_resolution, in_channels, out_channels))
-    
+        self.agg = agg
+        self.self_loops = self_loops
+        self.neighbors = 0
+        
     def ball_to_cube(self, r):
         norm = torch.norm(r, dim=-1, keepdim=True)
         r_unit = r / (norm + 1e-8)
         return r_unit * torch.tanh(norm)
     
-
     def trilinear_interpolate(self, coords):
         D = self.filter_resolution
         x, y, z = coords[:, 0], coords[:, 1], coords[:, 2]
@@ -50,7 +42,12 @@ class ContinuousConv(nn.Module):
         c0, c1 = c00 * (1 - yd) + c01 * yd, c10 * (1 - yd) + c11 * yd
         return c0 * (1 - xd) + c1 * xd
     
-    def forward(self, positions, features, edge_index):
+    def forward(self, positions, features, batch=None):
+        batch = batch if batch else torch.zeros(positions.size(0), dtype=torch.long, device=positions.device)
+        
+        edge_index = radius(positions, positions, self.radius, batch_x=batch, batch_y=batch, max_num_neighbors=10)
+        if self.self_loops:
+            edge_index, _ = add_self_loops(edge_index, num_nodes=positions.size(0))
 
         row, col = edge_index[0], edge_index[1]
         
@@ -62,20 +59,49 @@ class ContinuousConv(nn.Module):
         mapped = self.ball_to_cube(r)
         grid_coords = (mapped + 1) * ((self.filter_resolution - 1) / 2)
         filt = self.trilinear_interpolate(grid_coords)
-        print(filt.shape)
-        print(features[col].shape)
+        
         conv_edge = torch.einsum('eio,ei->eo', filt, features[col])
         conv_edge = conv_edge * window.unsqueeze(1)
         
         output = scatter(conv_edge, row, dim=0, dim_size=positions.size(0), reduce=self.agg)
         return output
 
+    '''
+    Maybe use grid_sample instead of trilinear interpolation?
+    
+    def grid_sample_trilinear(self, grid_coords):
+        # grid_coords: shape (E, 3) with coordinates in the original grid scale [0, D-1]
+        D = self.filter_resolution
+        E = grid_coords.shape[0]
+        # Convert to normalized coordinates in [-1, 1]
+        norm_coords = 2 * grid_coords / (D - 1) - 1  # shape (E, 3)
+        # Reshape to (E, 1, 1, 1, 3) as required by grid_sample for volumetric data:
+        norm_coords = norm_coords.view(E, 1, 1, 1, 3)
+        
+        # Rearrange filters:
+        # Original shape: (D, D, D, in_channels, out_channels)
+        # Permute to: (in_channels, out_channels, D, D, D)
+        filters_perm = self.filters.permute(3, 4, 0, 1, 2).contiguous()
+        # Merge in_channels and out_channels: (in_channels*out_channels, D, D, D)
+        filters_reshaped = filters_perm.view(1, self.in_channels * self.out_channels, D, D, D)
+        # Expand to have a batch dimension equal to the number of edges E.
+        filters_expanded = filters_reshaped.expand(E, -1, -1, -1, -1)
+        
+        # Use grid_sample with trilinear interpolation.
+        # For 5D inputs, mode should be 'trilinear' (and align_corners is important for correct normalization)
+        sampled = F.grid_sample(filters_expanded, norm_coords, mode='trilinear', align_corners=True)
+        # The result has shape (E, in_channels*out_channels, 1, 1, 1)
+        sampled = sampled.view(E, self.in_channels, self.out_channels)
+        return sampled  
+    '''
+
 class ContinuousConvModel(nn.Module):
-    def __init__(self, in_channels=4, out_channels=3, filter_resolution=[4], radius=0.5, agg='mean', self_loops=True,
-                 continuous_conv_layers=1, continuous_conv_dim=64, continuous_conv_dropout=0.0,
-                 encoder_hiddens=None, encoder_dropout=0.0, decoder_hiddens=None, decoder_dropout=0.0, device='cuda', scale_factor=1):
-        super().__init__()
-        self.device, self.scale_factor = device, scale_factor
+
+    def __init__(self, in_channels, out_channels, filter_resolution=[4], radius=0.5, agg='mean', self_loops=True, continuous_conv_layers=1,
+                 continuous_conv_dim=64, continuous_conv_dropout=0.0,
+                 encoder_hiddens=None, encoder_dropout=0.0, decoder_hiddens=None, decoder_dropout=0.0, device='cuda'):
+        super(ContinuousConvModel, self).__init__()
+        self.device = device
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.encoder_hiddens = encoder_hiddens
@@ -86,8 +112,6 @@ class ContinuousConvModel(nn.Module):
         self.continuous_conv_dim = continuous_conv_dim
         self.continuous_conv_dropout = continuous_conv_dropout
         self.neighbors = 0
-        self.radius = radius
-        self.self_loops = self_loops
 
         if encoder_hiddens:
             self.node_encoder = MLP([in_channels] + encoder_hiddens + [continuous_conv_dim], act='tanh', device=device, dropout=encoder_dropout)
@@ -104,15 +128,15 @@ class ContinuousConvModel(nn.Module):
             if type(filter_resolution) == list:
                 filter_resolution_i = filter_resolution[i]
                 if i == 0 and encoder_hiddens is None:
-                    self.contconv.append(ContinuousConv(in_channels, continuous_conv_dim, filter_resolution_i, self.radius, agg))
+                    self.contconv.append(ContinuousConv(in_channels, continuous_conv_dim, filter_resolution_i, radius, agg, self_loops))
                 else:
-                    self.contconv.append(ContinuousConv(continuous_conv_dim, continuous_conv_dim, filter_resolution_i, self.radius, agg))
+                    self.contconv.append(ContinuousConv(continuous_conv_dim, continuous_conv_dim, filter_resolution_i, radius, agg, self_loops))
 
             else:
                 if i == 0 and encoder_hiddens is None:
-                    self.gnns.append(ContinuousConv(in_channels, continuous_conv_dim, filter_resolution, radius, agg))
+                    self.gnns.append(ContinuousConv(in_channels, continuous_conv_dim, filter_resolution, radius, agg, self_loops))
                 else:
-                    self.gnns.append(ContinuousConv(continuous_conv_dim, continuous_conv_dim, filter_resolution, radius, agg))
+                    self.gnns.append(ContinuousConv(continuous_conv_dim, continuous_conv_dim, filter_resolution, radius, agg, self_loops))
 
         self.contconv.to(device)
 
@@ -141,25 +165,48 @@ class ContinuousConvModel(nn.Module):
         else:
             x = data.x
         pos = x[:, :3]
-        batch = data.batch
-        edge_index = radius_graph(pos, r=self.radius, batch=batch, loop=self.self_loops)
-        x = self.node_encoder(x)
-        encoder_output = x  # Store for concatenation
-        for layer in self.contconv:
-            x = layer(pos, x, edge_index)
-            x = F.tanh(x)
-            x = F.dropout(x, p=self.continuous_conv_dropout, training=self.training)
+        x = self.node_encoder(x)  # Always apply node encoding (Identity() if unused)
 
-        x = self.layer_norm(torch.cat((encoder_output, x), dim=-1))
+        encoder_output = x  # Store encoded node features
+
+        for layer in self.contconv:
+            x = layer(pos, x, data.batch)
+            x = nn.Tanh()(x)
+            x = nn.Dropout(self.continuous_conv_dropout)(x)
+
+        # Concatenate encoded input and GNN output if needed
+        x = torch.cat((encoder_output, x), dim=-1)
+
+        x = self.layer_norm(x)
+
         return self.output(x)
+    
+    def predict(self, pos, x):
+        data = Data(x=torch.cat([pos, x], dim=-1))
+        return self.forward(data)
     
     def compute_loss(self, data):
         acc_pred = self.forward(data)
-        return torch.sqrt(F.mse_loss(acc_pred * self.scale_factor, data.y * self.scale_factor)), F.mse_loss(acc_pred, data.y)
+        loss = torch.nn.functional.mse_loss(acc_pred, data.y, reduction='mean')
+        mse_losses = torch.nn.functional.mse_loss(acc_pred, data.y, reduction='mean')
 
+        return loss, mse_losses
+    
     def train_graph_batch(self, optimizer, data):
+        self.train()
         optimizer.zero_grad()
         loss, mse_loss = self.compute_loss(data)
         loss.backward()
         optimizer.step()
         return loss.item(), mse_loss.item()
+    
+    def eval_graph_batch(self, data):
+        self.eval()
+        with torch.no_grad():
+            start = time.time()
+            acc_pred = self.forward(data)
+            end = time.time()
+            loss = torch.nn.functional.mse_loss(acc_pred, data.y, reduction='mean')
+            mse_loss = torch.nn.functional.mse_loss(acc_pred, data.y, reduction='mean')
+        return loss.item(), mse_loss.item(), end - start
+    
