@@ -9,35 +9,35 @@ class BodyType(enum.Enum):
 
 
 def spherical_hernquist_distribution(
-        *,
-        r: float | np.ndarray,
-        r0: float = 1,
-        total_mass: float = 1,
-        avoid_distance_zero: bool = True,
+    *,
+    r: float | np.ndarray,
+    r0: float = 1,
+    total_mass: float = 1,
+    avoid_distance_zero: bool = True,
 ) -> float | np.ndarray:
     """Calcula la contribución de masa de cada partícula de acuerdo al perfil esférico de Hernquist.
 
-   La densidad se define como:
-        ρ(r) = (total_mass / (2π)) * (r0 / (r * (r0 + r)**3))
+    La densidad se define como:
+         ρ(r) = (total_mass / (2π)) * (r0 / (r * (r0 + r)**3))
 
-    Siendo 'r' la distancia radial al centro de la galaxia, 'r0' el radio de escala y 'total_mass' la masa total.
+     Siendo 'r' la distancia radial al centro de la galaxia, 'r0' el radio de escala y 'total_mass' la masa total.
 
-    Ejemplo:
+     Ejemplo:
 
-    >>> import numpy as np
-    >>> r_values = np.array([0.0, 1.0, 2.0])
-    >>> spherical_hernquist_distribution(r_values, r0=1, total_mass=1)
-    array([ ... , ... , ...])
+     >>> import numpy as np
+     >>> r_values = np.array([0.0, 1.0, 2.0])
+     >>> spherical_hernquist_distribution(r_values, r0=1, total_mass=1)
+     array([ ... , ... , ...])
 
-    :param r: Distancia(s) radial(es) al centro de la galaxia.
-    :param r0: Radio total de escala, esto es, el límite entre la región central (donde la densidad es muy alta) y la
-        región exterior (donde la densidad decrece más rápidamente). Por defecto es 1.
-    :param total_mass: Masa total de la galaxia. Por defecto es 1.
-    :param avoid_distance_zero: Si es True, se reemplazan los valores de r iguales a cero por un valor pequeño
-        (np.finfo(np.float32).eps) para evitar la singularidad. Si es False, se lanzará un ValueError si se encuentra un
-        valor cero. Por defecto es True.
-    :return: Densidad de la partícula en la posición 'r'.
-    :raises ValueError: Si 'r' es cero y avoid_distance_zero es False.
+     :param r: Distancia(s) radial(es) al centro de la galaxia.
+     :param r0: Radio total de escala, esto es, el límite entre la región central (donde la densidad es muy alta) y la
+         región exterior (donde la densidad decrece más rápidamente). Por defecto es 1.
+     :param total_mass: Masa total de la galaxia. Por defecto es 1.
+     :param avoid_distance_zero: Si es True, se reemplazan los valores de r iguales a cero por un valor pequeño
+         (np.finfo(np.float32).eps) para evitar la singularidad. Si es False, se lanzará un ValueError si se encuentra un
+         valor cero. Por defecto es True.
+     :return: Densidad de la partícula en la posición 'r'.
+     :raises ValueError: Si 'r' es cero y avoid_distance_zero es False.
     """
     r = np.asarray(r)
 
@@ -52,18 +52,18 @@ def spherical_hernquist_distribution(
 
 
 def generate_disk(
-        *,
-        n_bodies: int,
-        total_mass: float,
-        radial_scale: float,
-        height_scale: float,
-        g_const: float,
-        black_hole_mass: float,
-        offset=(0, 0, 0),
-        initial_vel=(0, 0, 0),
-        clockwise=True,
-        angle=(0, 0, 0),
-        seed: int = None,
+    *,
+    n_bodies: int,
+    total_mass: float,
+    radial_scale: float,
+    height_scale: float,
+    g_const: float,
+    black_hole_mass: float,
+    offset=(0, 0, 0),
+    initial_vel=(0, 0, 0),
+    clockwise=True,
+    angle=(0, 0, 0),
+    seed: int = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Galaxia de tipo disco con un agujero negro en el centro.
 
@@ -96,12 +96,18 @@ def generate_disk(
     # POSICIONES #
     ##############
     # Generamos las distancias radiales con una transformación que favorece las regiones internas.
-    distances = -radial_scale * np.log(1 - np.random.uniform(low=np.finfo(np.float32).eps, high=1.0, size=n_bodies))
+    distances = -radial_scale * np.log(
+        1 - np.random.uniform(low=np.finfo(np.float32).eps, high=1.0, size=n_bodies)
+    )
     # El agujero negro se sitúa en el centro.
     distances[types == BodyType.BLACK_HOLE] = 0
 
     # Generamos la altura del disco, reduciéndose al acercarse al borde.
-    zs = np.random.uniform(-1.0, 1.0, size=n_bodies) * height_scale * (1 - np.sqrt(distances))
+    zs = (
+        np.random.uniform(-1.0, 1.0, size=n_bodies)
+        * height_scale
+        * (1 - np.sqrt(distances))
+    )
     zs[types == BodyType.BLACK_HOLE] = 0
 
     # Ángulos aleatorios para distribuir las estrellas a lo largo del disco.
@@ -121,9 +127,11 @@ def generate_disk(
     masses[0] = mass_bh
 
     # Para las estrellas se utiliza la distribución esférica de Hernquist para calcular pesos relativos.
-    star_indices = (types == BodyType.STAR)
+    star_indices = types == BodyType.STAR
     # Se utiliza la distribución de Hernquist sobre las distancias de las estrellas.
-    star_weights = spherical_hernquist_distribution(r=distances[star_indices], r0=1, total_mass=total_mass)
+    star_weights = spherical_hernquist_distribution(
+        r=distances[star_indices], r0=1, total_mass=total_mass
+    )
     # Se normalizan los pesos para que la suma de las masas de las estrellas sea (total_mass - mass_bh).
     star_weights_sum = star_weights.sum()
     masses[star_indices] = star_weights * ((total_mass - mass_bh) / star_weights_sum)
@@ -150,21 +158,27 @@ def generate_disk(
 
     # Creamos las matrices de rotación a partir de los ángulos de Euler proporcionados.
     euler_angles = np.array(angle)
-    rx = np.array([
-        [1, 0, 0],
-        [0, np.cos(euler_angles[0]), -np.sin(euler_angles[0])],
-        [0, np.sin(euler_angles[0]), np.cos(euler_angles[0])]
-    ])
-    ry = np.array([
-        [np.cos(euler_angles[1]), 0, np.sin(euler_angles[1])],
-        [0, 1, 0],
-        [-np.sin(euler_angles[1]), 0, np.cos(euler_angles[1])]
-    ])
-    rz = np.array([
-        [np.cos(euler_angles[2]), -np.sin(euler_angles[2]), 0],
-        [np.sin(euler_angles[2]), np.cos(euler_angles[2]), 0],
-        [0, 0, 1]
-    ])
+    rx = np.array(
+        [
+            [1, 0, 0],
+            [0, np.cos(euler_angles[0]), -np.sin(euler_angles[0])],
+            [0, np.sin(euler_angles[0]), np.cos(euler_angles[0])],
+        ]
+    )
+    ry = np.array(
+        [
+            [np.cos(euler_angles[1]), 0, np.sin(euler_angles[1])],
+            [0, 1, 0],
+            [-np.sin(euler_angles[1]), 0, np.cos(euler_angles[1])],
+        ]
+    )
+    rz = np.array(
+        [
+            [np.cos(euler_angles[2]), -np.sin(euler_angles[2]), 0],
+            [np.sin(euler_angles[2]), np.cos(euler_angles[2]), 0],
+            [0, 0, 1],
+        ]
+    )
 
     # Aplicamos las rotaciones a todas las posiciones y velocidades.
     positions = positions @ rx.T @ ry.T @ rz.T
@@ -179,17 +193,17 @@ def generate_disk(
 
 
 def generate_spiral(
-        *,
-        n_bodies: int,
-        total_mass: float,
-        radial_scale: float,
-        height_scale: float,
-        g_const: float,
-        black_hole_mass: float,
-        n_arms: int = 2,
-        pitch_angle: float = -np.pi / 6,
-        arm_strength: float = 0.3,
-        seed: int = None,
+    *,
+    n_bodies: int,
+    total_mass: float,
+    radial_scale: float,
+    height_scale: float,
+    g_const: float,
+    black_hole_mass: float,
+    n_arms: int = 2,
+    pitch_angle: float = -np.pi / 6,
+    arm_strength: float = 0.3,
+    seed: int = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Galaxia espiral con un agujero negro en el centro.
 
@@ -242,8 +256,15 @@ def generate_spiral(
             # Se muestrea el ángulo azimutal 'phi' uniformemente en [0, 2π)
             phi = 2 * np.pi * np.random.rand()
             # Se añade una perturbación espiral para acentuar la formación de brazos
-            phi_spiral = phi + arm_strength * np.sin(
-                n_arms * (phi - np.log(r / radial_scale) / np.tan(pitch_angle))) if r > 0 else phi
+            phi_spiral = (
+                phi
+                + arm_strength
+                * np.sin(
+                    n_arms * (phi - np.log(r / radial_scale) / np.tan(pitch_angle))
+                )
+                if r > 0
+                else phi
+            )
 
             # Coordenadas cartesianas: el disco se sitúa en el plano XY y la coordenada 'z' se asigna de forma gaussiana
             x = r * np.cos(phi_spiral)
@@ -255,7 +276,9 @@ def generate_spiral(
             # VELOCIDADES #
             ###############
             # Se estima la velocidad circular usando la masa encerrada en 'r' para un disco exponencial
-            m_enc = total_mass * (1 - np.exp(-r / radial_scale) * (1 + r / radial_scale))
+            m_enc = total_mass * (
+                1 - np.exp(-r / radial_scale) * (1 + r / radial_scale)
+            )
             v_circ = 0.0 if r < 1e-8 else np.sqrt(g_const * m_enc / r)
             sigma_r = 0.1 * v_circ
             sigma_phi = 0.07 * v_circ

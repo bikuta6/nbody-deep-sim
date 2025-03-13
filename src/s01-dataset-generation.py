@@ -9,41 +9,84 @@ from galaxify import galaxies, simulation
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generación de dataset de simulaciones de galaxias")
-    parser.add_argument(
-        "--n-bodies", type=int, nargs="+", required=True, help="Número de cuerpos en la galaxia (valen varios valores)"
+    parser = argparse.ArgumentParser(
+        description="Generación de dataset de simulaciones de galaxias"
     )
     parser.add_argument(
-        "--integrator", type=str, default="leapfrog", choices=["leapfrog", "euler"], required=True, help="Integrador a utilizar"
+        "--n-bodies",
+        type=int,
+        nargs="+",
+        required=True,
+        help="Número de cuerpos en la galaxia (valen varios valores)",
+    )
+    parser.add_argument(
+        "--integrator",
+        type=str,
+        default="leapfrog",
+        choices=["leapfrog", "euler"],
+        required=True,
+        help="Integrador a utilizar",
     )
     parser.add_argument(
         "--output", type=str, required=True, help="Fichero de salida (CSV)"
     )
     parser.add_argument(
-        "--sim-type", type=str, nargs="+", choices=["disk", "spiral"], default=["disk"], help="Tipo de simulación"
+        "--sim-type",
+        type=str,
+        nargs="+",
+        choices=["disk", "spiral"],
+        default=["disk"],
+        help="Tipo de simulación",
     )
-    parser.add_argument("--steps", type=int, default=100, help="Número de pasos de la simulación")
+    parser.add_argument(
+        "--steps", type=int, default=100, help="Número de pasos de la simulación"
+    )
     parser.add_argument("--dt", type=float, default=0.0001, help="Paso temporal dt")
-    parser.add_argument("--softening", type=float, default=0.05, help="Parámetro de suavizado")
-    parser.add_argument("--g", type=float, default=4.5e-6, help="Constante gravitacional")
-    parser.add_argument("--total-mass", type=float, default=1.0, help="Masa total de la galaxia")
-    parser.add_argument("--radial-scale", type=float, default=3.0, help="Escala radial de la galaxia")
-    parser.add_argument("--height-scale", type=float, default=0.3, help="Escala vertical de la galaxia")
     parser.add_argument(
-        "--black-hole-mass", type=float, default=0.01, help="Fracción de la masa total para el agujero negro (spiral)"
-    )
-    parser.add_argument("--n-arms", type=int, default=2, help="Número de brazos espirales (spiral)")
-    parser.add_argument(
-        "--pitch-angle", type=float, default=-np.pi/6, help="Ángulo de pitch (en radianes, spiral)."
+        "--softening", type=float, default=0.05, help="Parámetro de suavizado"
     )
     parser.add_argument(
-        "--arm-strength", type=float, default=0.3, help="Perturbación angular de los brazos (spiral)."
+        "--g", type=float, default=4.5e-6, help="Constante gravitacional"
+    )
+    parser.add_argument(
+        "--total-mass", type=float, default=1.0, help="Masa total de la galaxia"
+    )
+    parser.add_argument(
+        "--radial-scale", type=float, default=3.0, help="Escala radial de la galaxia"
+    )
+    parser.add_argument(
+        "--height-scale", type=float, default=0.3, help="Escala vertical de la galaxia"
+    )
+    parser.add_argument(
+        "--black-hole-mass",
+        type=float,
+        default=0.01,
+        help="Fracción de la masa total para el agujero negro (spiral)",
+    )
+    parser.add_argument(
+        "--n-arms", type=int, default=2, help="Número de brazos espirales (spiral)"
+    )
+    parser.add_argument(
+        "--pitch-angle",
+        type=float,
+        default=-np.pi / 6,
+        help="Ángulo de pitch (en radianes, spiral).",
+    )
+    parser.add_argument(
+        "--arm-strength",
+        type=float,
+        default=0.3,
+        help="Perturbación angular de los brazos (spiral).",
     )
     parser.add_argument(
         "--seed", type=int, default=None, help="Semilla para el generador aleatorio."
     )
     parser.add_argument(
-        "--device", type=str, choices=["cuda", "cpu"], default=None, help="Dispositivo para simular"
+        "--device",
+        type=str,
+        choices=["cuda", "cpu"],
+        default=None,
+        help="Dispositivo para simular",
     )
     args = parser.parse_args()
 
@@ -63,8 +106,22 @@ def main():
     print(f"Creando dataset {args.output}")
     with open(args.output, "w", newline="") as f:
         fieldnames = [
-            "scene", "scene_type", "step", "step_time", "mass",
-            "x", "y", "z", "vx", "vy", "vz", "ax", "ay", "az", "u", "k"
+            "scene",
+            "scene_type",
+            "step",
+            "step_time",
+            "mass",
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "ax",
+            "ay",
+            "az",
+            "u",
+            "k",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -72,17 +129,17 @@ def main():
         scene_id = 0
         for combo in combinations:
             combo_dict = dict(zip(keys, combo))
-            n_bodies   = combo_dict["n_bodies"]
-            sim_type   = combo_dict["sim_type"]
-            steps      = combo_dict["steps"]
-            dt         = combo_dict["dt"]
-            softening  = combo_dict["softening"]
-            g_const    = combo_dict["g"]
+            n_bodies = combo_dict["n_bodies"]
+            sim_type = combo_dict["sim_type"]
+            steps = combo_dict["steps"]
+            dt = combo_dict["dt"]
+            softening = combo_dict["softening"]
+            g_const = combo_dict["g"]
             black_hole_mass = combo_dict["black_hole_mass"]
             total_mass = combo_dict["total_mass"]
             radial_scale = combo_dict["radial_scale"]
             height_scale = combo_dict["height_scale"]
-            seed       = combo_dict["seed"]
+            seed = combo_dict["seed"]
 
             print("-" * 80)
             print(f"Escenario {scene_id + 1}/{len(combinations)}")
@@ -107,7 +164,7 @@ def main():
                     radial_scale=radial_scale,
                     height_scale=height_scale,
                     g_const=g_const,
-                    seed=seed
+                    seed=seed,
                 )
             elif sim_type == "spiral":
                 black_hole_mass = combo_dict.get("black_hole_mass", 0.01)
@@ -124,7 +181,7 @@ def main():
                     n_arms=n_arms,
                     pitch_angle=pitch_angle,
                     arm_strength=arm_strength,
-                    seed=seed
+                    seed=seed,
                 )
             else:
                 raise ValueError(f"Tipo de simulación desconocido: {sim_type}")
@@ -185,6 +242,6 @@ def main():
             scene_id += 1
             print("✅")
 
+
 if __name__ == "__main__":
     main()
-

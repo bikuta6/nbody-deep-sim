@@ -8,6 +8,7 @@ import torch
 @dataclass
 class SimulationState:
     """Estado de la simulación en un instante dado."""
+
     step: int  # Número de paso de la simulación
     step_time: float  # Tiempo que tomó ejecutar este paso (en segundos)
     positions: torch.Tensor  # Posiciones de las partículas (n_bodies, 3)
@@ -19,15 +20,16 @@ class SimulationState:
 
 class BaseSimulator:
     def __init__(
-            self, *,
-            positions: np.ndarray | torch.Tensor,
-            velocities: np.ndarray | torch.Tensor,
-            masses: np.ndarray | torch.Tensor,
-            g_const: float = 1.0,
-            softening: float = 0.1,
-            dt: float = 0.01,
-            calc_energy: bool = True,
-            device: str = None,
+        self,
+        *,
+        positions: np.ndarray | torch.Tensor,
+        velocities: np.ndarray | torch.Tensor,
+        masses: np.ndarray | torch.Tensor,
+        g_const: float = 1.0,
+        softening: float = 0.1,
+        dt: float = 0.01,
+        calc_energy: bool = True,
+        device: str = None,
     ):
         """Inicializa el simulador.
 
@@ -53,8 +55,12 @@ class BaseSimulator:
         self.softening = softening
         self.calc_energy = calc_energy
 
-        self.positions = torch.tensor(positions, dtype=torch.float32, device=self.device)
-        self.velocities = torch.tensor(velocities, dtype=torch.float32, device=self.device)
+        self.positions = torch.tensor(
+            positions, dtype=torch.float32, device=self.device
+        )
+        self.velocities = torch.tensor(
+            velocities, dtype=torch.float32, device=self.device
+        )
         self.accelerations = None
         self.masses = torch.tensor(masses, dtype=torch.float32, device=self.device)
 
@@ -73,11 +79,13 @@ class BaseSimulator:
         # Calculamos las diferencias: diff[i,j] = r_j - r_i
         diff = self.positions.unsqueeze(0) - self.positions.unsqueeze(1)
         # Distancias al cuadrado con suavizado
-        dist_sq = (diff ** 2).sum(dim=2) + self.softening ** 2
+        dist_sq = (diff**2).sum(dim=2) + self.softening**2
         inv_dist_cube = dist_sq.pow(-1.5)
         # Queremos solo i != j
         inv_dist_cube.fill_diagonal_(0)
-        acc = self.g_const * (diff * inv_dist_cube.unsqueeze(2) * self.masses.unsqueeze(0).unsqueeze(2)).sum(dim=1)
+        acc = self.g_const * (
+            diff * inv_dist_cube.unsqueeze(2) * self.masses.unsqueeze(0).unsqueeze(2)
+        ).sum(dim=1)
         return acc
 
     def compute_energies(self):
@@ -89,16 +97,18 @@ class BaseSimulator:
         :return: Tupla con la energía potencial y cinética del sistema.
         """
         # Energía cinética
-        kinetic = 0.5 * self.masses * (self.velocities ** 2).sum(dim=1)
+        kinetic = 0.5 * self.masses * (self.velocities**2).sum(dim=1)
         k_energy = kinetic.sum().item()
 
         # Energía potencial
         diff = self.positions.unsqueeze(0) - self.positions.unsqueeze(1)
-        dist = (diff ** 2).sum(dim=2).sqrt() + self.softening
+        dist = (diff**2).sum(dim=2).sqrt() + self.softening
         # Evitamos la división por cero (tb. auto-interacción)
         mask = torch.eye(self.n, device=self.device, dtype=torch.bool)
         dist.masked_fill_(mask, float("inf"))
-        potential_matrix = -self.g_const * (self.masses.unsqueeze(0) * self.masses.unsqueeze(1)) / dist
+        potential_matrix = (
+            -self.g_const * (self.masses.unsqueeze(0) * self.masses.unsqueeze(1)) / dist
+        )
         # Sumamos solo por encima de la diagonal para no contar dos veces
         u_energy = potential_matrix.triu(1).sum().item()
 
@@ -118,17 +128,21 @@ class BaseSimulator:
             self.step()
             step_time = time.time() - start_time
 
-            u_energy, k_energy = self.compute_energies() if self.calc_energy else (None, None)
+            u_energy, k_energy = (
+                self.compute_energies() if self.calc_energy else (None, None)
+            )
 
-            states.append(SimulationState(
-                positions=self.positions.clone().cpu(),
-                velocities=self.velocities.clone().cpu(),
-                accelerations=self.accelerations.clone().cpu(),
-                step=step,
-                step_time=step_time,
-                u_energy=u_energy,
-                k_energy=k_energy,
-            ))
+            states.append(
+                SimulationState(
+                    positions=self.positions.clone().cpu(),
+                    velocities=self.velocities.clone().cpu(),
+                    accelerations=self.accelerations.clone().cpu(),
+                    step=step,
+                    step_time=step_time,
+                    u_energy=u_energy,
+                    k_energy=k_energy,
+                )
+            )
         return states
 
     def step(self):
@@ -185,13 +199,15 @@ class RK4Simulator(BaseSimulator):
         # Diferencias de posiciones entre cada par de cuerpos
         diff = positions.unsqueeze(1) - positions.unsqueeze(0)  # (n, n, 3)
         # Distancias al cuadrado con suavizado
-        dist_sq = (diff ** 2).sum(dim=2) + self.softening ** 2  # (n, n)
+        dist_sq = (diff**2).sum(dim=2) + self.softening**2  # (n, n)
         # Inversa del cubo de las distancias
         inv_dist_cube = dist_sq.pow(-1.5)
         # Evitamos la auto-interacción
         inv_dist_cube.fill_diagonal_(0)
         # Calculamos la aceleración total sobre cada partícula
-        acc = self.g_const * (diff * inv_dist_cube.unsqueeze(2) * self.masses.unsqueeze(0).unsqueeze(2)).sum(dim=1)
+        acc = self.g_const * (
+            diff * inv_dist_cube.unsqueeze(2) * self.masses.unsqueeze(0).unsqueeze(2)
+        ).sum(dim=1)
         return acc
 
     def step(self):
@@ -233,8 +249,12 @@ class RK4Simulator(BaseSimulator):
         k4_vel = self._compute_accelerations_at(pos_k4)
 
         # Actualizamos las posiciones y velocidades combinando los incrementos
-        self.positions = self.positions + (dt / 6) * (k1_pos + 2 * k2_pos + 2 * k3_pos + k4_pos)
-        self.velocities = self.velocities + (dt / 6) * (k1_vel + 2 * k2_vel + 2 * k3_vel + k4_vel)
+        self.positions = self.positions + (dt / 6) * (
+            k1_pos + 2 * k2_pos + 2 * k3_pos + k4_pos
+        )
+        self.velocities = self.velocities + (dt / 6) * (
+            k1_vel + 2 * k2_vel + 2 * k3_vel + k4_vel
+        )
 
         # Recalculamos las aceleraciones a partir de las nuevas posiciones
         self.accelerations = self.compute_accelerations()

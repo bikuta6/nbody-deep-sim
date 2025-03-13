@@ -1,0 +1,28 @@
+# Ignore Python cache files
+__pycache__/
+src/galaxify/__pycache__/
+
+# Ignore mypy cache
+.mypy_cache/
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore training and test data
+data/train/
+data/test/
+
+# Ignore model weights and results
+contconv_weights/
+gnn_weights/
+
+# Ignore log files
+*.log
+
+# Ignore temporary files
+*.tmp
+*.bak
+*.swp
