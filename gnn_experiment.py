@@ -77,7 +77,7 @@ trainer = Trainer(
 print("Model and trainer initialized.")
 
 # Train model
-
+'''
 epoch_loss, _ = trainer.train_from_dir(
     epochs=100,
     batch_size=64,
@@ -86,10 +86,11 @@ epoch_loss, _ = trainer.train_from_dir(
     save_path="./gnn_weights",
 )
 
+
 pd.DataFrame(epoch_loss, columns=["loss"]).to_csv(
     "./results/gnn/epoch_loss.csv", index=False
 )
-
+'''
 print("Training completed, evaluating model.")
 
 # Test model
