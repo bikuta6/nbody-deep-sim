@@ -75,13 +75,13 @@ model = ContinuousConvModel(
 optimizer = Adam(model.parameters(), lr=0.01)
 scheduler = ReduceLROnPlateau(optimizer=optimizer)
 trainer = Trainer(
-    model, optimizer=optimizer, device="cuda:1", dt=0.0001, scheduler=scheduler
+    model, optimizer=optimizer, device="cuda", dt=0.0001, scheduler=scheduler
 )
 
 print("Model and trainer initialized.")
 
 # Train model
-
+'''
 epoch_loss, _ = trainer.train_from_dir(
     epochs=100,
     batch_size=16,
@@ -93,7 +93,7 @@ epoch_loss, _ = trainer.train_from_dir(
 pd.DataFrame(epoch_loss, columns=["loss"]).to_csv(
     "./results/contconv/epoch_loss.csv", index=False
 )
-
+'''
 print("Training completed, evaluating model.")
 
 # Test model
