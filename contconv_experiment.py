@@ -19,6 +19,7 @@ os.makedirs("./results/contconv", exist_ok=True)
 print("Directories created.")
 # Generate data function
 
+DEVICE = "cpu"
 
 def generate_data(output_dir, num_files=10):
     for i in range(1, num_files + 1):
@@ -41,6 +42,8 @@ def generate_data(output_dir, num_files=10):
                 "2",
                 "--seed",
                 random_seed,
+                "--device",
+                DEVICE,
             ]
         )
         subprocess.run(cmd, check=True, shell=True)
@@ -68,14 +71,14 @@ model = ContinuousConvModel(
     encoder_hiddens=[32, 64],
     encoder_dropout=0.0,
     decoder_hiddens=[64, 32],
-    device="cuda",
+    device=DEVICE,
     scale_factor=1e6,
 )
 
 optimizer = Adam(model.parameters(), lr=0.01)
 scheduler = ReduceLROnPlateau(optimizer=optimizer)
 trainer = Trainer(
-    model, optimizer=optimizer, device="cuda", dt=0.0001, scheduler=scheduler
+    model, optimizer=optimizer, device=DEVICE, dt=0.0001, scheduler=scheduler
 )
 
 print("Model and trainer initialized.")

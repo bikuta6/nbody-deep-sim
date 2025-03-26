@@ -19,6 +19,7 @@ os.makedirs("./results/gnn", exist_ok=True)
 print("Directories created.")
 # Generate data function
 
+DEVICE = "cpu"
 
 def generate_data(output_dir, num_files=10):
     for i in range(1, num_files + 1):
@@ -41,6 +42,8 @@ def generate_data(output_dir, num_files=10):
                 "2",
                 "--seed",
                 random_seed,
+                "--device",
+                DEVICE,
             ]
         )
         subprocess.run(cmd, check=True, shell=True)
@@ -57,21 +60,21 @@ print("Data generated.")
 # Initialize model and trainer
 model = GraphModel(
     input_dim=4,  # 3 (pos) + 1 (mass) + 3 (vel) + 3 * previous positions
-    node_encoder_dims=[32, 64],
+    node_encoder_dims=None,
     encoder_dropout=0.0,
-    gnn_dim=128,
+    gnn_dim=64,
     message_passing_steps=2,
     aggr="mean",
-    output_hiddens=[64, 32],
-    device="cuda",
-    neighbors=20,
+    output_hiddens=None,
+    device=DEVICE,
+    neighbors=10,
     scale_factor=1e6,
 )
 
 optimizer = Adam(model.parameters(), lr=0.01)
-scheduler = ReduceLROnPlateau(optimizer=optimizer)
+scheduler = ReduceLROnPlateau(optimizer=optimizer, mode="min", factor=0.25, patience=5)
 trainer = Trainer(
-    model, optimizer=optimizer, device="cuda", dt=0.0001, scheduler=scheduler
+    model, optimizer=optimizer, device=DEVICE, dt=0.0001, scheduler=scheduler
 )
 
 print("Model and trainer initialized.")
