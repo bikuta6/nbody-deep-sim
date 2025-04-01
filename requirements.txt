@@ -1,0 +1,9 @@
+pandas==2.2.3
+torch==2.5.0+cu124
+torch-geometric==2.6.1
+torch-cluster==1.6.3+pt25cu124
+torch-scatter==2.1.2+pt25cu124
+torch-sparse==0.6.18+pt25cu124
+torch-spline-conv==1.2.2+pt25cu124
+numpy==2.1.2
+tqdm==4.67.1
