@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Define the paths to your Python scripts
 script1="gnn_experiment.py"
 script2="contconv_experiment.py"
 
