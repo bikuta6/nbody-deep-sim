@@ -84,7 +84,7 @@ trainer = Trainer(
 print("Model and trainer initialized.")
 
 # Train model
-'''
+
 epoch_loss, _ = trainer.train_from_dir(
     epochs=100,
     batch_size=16,
@@ -96,7 +96,7 @@ epoch_loss, _ = trainer.train_from_dir(
 pd.DataFrame(epoch_loss, columns=["loss"]).to_csv(
     "./results/contconv/epoch_loss.csv", index=False
 )
-'''
+
 print("Training completed, evaluating model.")
 
 # Test model
